@@ -4,20 +4,17 @@ import numba
 from numba import njit
 from scipy.ndimage import convolve, generate_binary_structure
 import scipy.ndimage as sp
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 
 # 50 by 50 grid
 N = 50
-plt.ion()
 
 init_random = np.random.random((N,N))
 lattice_n = np.zeros((N,N))
 lattice_n[init_random>=0.75] = 1
 lattice_n[init_random<0.75] = -1
 
-print(init_random)
+# print(init_random)
 print(lattice_n)
 
 init_random = np.random.random((N,N))
@@ -25,13 +22,9 @@ lattice_p = np.zeros((N,N))
 lattice_p[init_random>=0.25] = 1
 lattice_p[init_random<0.25] = -1
 
-# print(init_random)
-# print(lattice_p)
-# plt.imshow(lattice_p)
-# plt.show(block=False)
 
 def get_energy(lattice):
-    E, J = 0
+    E, J = 0, 1
     # interaction with both left and right neighbors
     E -= np.sum(lattice[:, :-1] * lattice[:, 1:])
     # interaction with both top and bottom neighbors
@@ -73,9 +66,6 @@ def metropolis(spin_arr, times, BJ, energy):
         if (dE <= 0) or (np.random.random() < np.exp(-BJ * dE)): #CHECK, changed to <, and or instead of *
             spin_arr[x, y] = spin_f
             energy += dE
-        # elif dE <= 0: #CHECK
-        #     spin_arr[x, y] = spin_i
-        #     energy += dE
 
         net_spins[t] = spin_arr.sum()
         net_energy[t] = energy
@@ -83,22 +73,27 @@ def metropolis(spin_arr, times, BJ, energy):
     return net_spins, net_energy
 
 
-spins, energies = metropolis(lattice_n, 1000000, 0.2, get_energy(lattice_n))
-
-fig = make_subplots(rows=1, cols=2)
-
-# Average spin plot
-fig.add_trace(go.Scatter(y=spins / N ** 2, mode='lines', line=dict(color='blue')), row=1, col=1)
-
-# Energy plot
-fig.add_trace(go.Scatter(y=energies, mode='lines', line=dict(color='red')), row=1, col=2)
-
-fig.update_xaxes(title_text="Time Steps", row=1, col=1)
-fig.update_xaxes(title_text="Time Steps", row=1, col=2)
-fig.update_yaxes(title_text="Average Spin", row=1, col=1)
-fig.update_yaxes(title_text="Energy", row=1, col=2)
-fig.update_layout(title=f'βJ = {BJ}', height=400, showlegend=False)
-fig.show()
+# spins, energies = metropolis(lattice_n, 1000000, 0.5, get_energy(lattice_n))
+#
+# fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+#
+# # Average spin plot
+# ax = axes[0]
+# ax.plot(spins / N**2)
+# ax.set_xlabel('Algorithm Time Steps')
+# ax.set_ylabel(r'Average Spin $\bar{m}$')
+# ax.grid()
+#
+# # Energy plot
+# ax = axes[1]
+# ax.plot(energies)
+# ax.set_xlabel('Algorithm Time Steps')
+# ax.set_ylabel(r'Energy $E/J$')
+# ax.grid()
+#
+# fig.tight_layout()
+# fig.suptitle(r'Evolution of Average Spin and Energy for $\beta J=$0.7', y=1.07, size=18)
+# plt.show()
 
 
 def get_spin_energy(lattice, BJs):
@@ -106,13 +101,29 @@ def get_spin_energy(lattice, BJs):
     E_means = np.zeros(len(BJs))
     E_stds = np.zeros(len(BJs))
     for i, bj in enumerate(BJs):
-        spins, energies = metropolis(lattice, 1000000, bj, get_energy(lattice))
+        spins, energies = metropolis(lattice, 600000, bj, get_energy(lattice))
         ms[i] = spins[-100000:].mean() / N ** 2
-        E_means[i] = energies[-100000:].mean()
-        E_stds[i] = energies[-100000:].std()
+        E_means[i] = energies[-100000:].mean() / N ** 2
+        E_stds[i] = energies[-100000:].std() / N ** 2
     return ms, E_means, E_stds
 
 
-BJs = np.arange(0.1, 2, 0.05)
-ms_n, E_means_n, E_stds_n = get_spin_energy(lattice_n, BJs)
-ms_p, E_means_p, E_stds_p = get_spin_energy(lattice_p, BJs)
+
+
+# plt.show(block=True)
+# plt.plot(BJs, ms_n, label='Metropolis')
+# plt.plot(BJs, E_stds_n)
+# plt.title('Avg spin per Temp')
+# plt.xlabel('Temperature')
+# plt.show(block=True)
+
+def lattice_plot(lattice):
+    BJs = np.arange(0.3, 1, 0.025)
+    T = 1 / BJs
+    lattice = lattice.copy()
+    ms, E_means, E_stds = get_spin_energy(lattice, BJs)
+    plt.plot(T, ms, label='Metropolis'); plt.title('Avg spin per Temp'); plt.show(block=True)
+    plt.plot(T, E_means, label='Energy'); plt.title('Mean Energy per Temp'); plt.show(block=True)
+    plt.plot(T,E_stds); plt.title('Standard Deviation per Temp'); plt.show(block=True)
+
+lattice_plot(lattice_p)
