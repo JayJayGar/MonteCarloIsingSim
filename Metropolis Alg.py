@@ -42,29 +42,19 @@ def metropolis(spin_arr, times, BJ, energy):
         # pick a random point on array and flip spin
         x = np.random.randint(0,N)
         y = np.random.randint(0,N)
-        spin_i = spin_arr[x,y] #init spin
-        spin_f = spin_i*-1 #proposed spin flip
+        # spin_i = spin_arr[x,y]
 
-        # compute change in energy
-        E_i = 0
-        E_f = 0
-        if x > 0:
-            E_i += -spin_i * spin_arr[x - 1, y]
-            E_f += -spin_f * spin_arr[x - 1, y]
-        if x < N - 1:
-            E_i += -spin_i * spin_arr[x + 1, y]
-            E_f += -spin_f * spin_arr[x + 1, y]
-        if y > 0:
-            E_i += -spin_i * spin_arr[x, y - 1]
-            E_f += -spin_f * spin_arr[x, y - 1]
-        if y < N - 1:
-            E_i += -spin_i * spin_arr[x, y + 1]
-            E_f += -spin_f * spin_arr[x, y + 1]
+        xL = (x - 1) % N
+        xR = (x + 1) % N
+        yU = (y - 1) % N
+        yD = (y + 1) % N
+        dE = 2 * spin_arr[x, y] * (
+                spin_arr[xL, y] + spin_arr[xR, y] +
+                spin_arr[x, yU] + spin_arr[x, yD]
+        )
 
-        # 3 / 4. change state with designated probabilities
-        dE = E_f - E_i
-        if (dE <= 0) or (np.random.random() < np.exp(-BJ * dE)): #CHECK, changed to <, and or instead of *
-            spin_arr[x, y] = spin_f
+        if (dE <= 0) or (np.random.random() < np.exp(-BJ * dE)):
+            spin_arr[x, y] *= -1  #flip selected spin
             energy += dE
 
         net_spins[t] = spin_arr.sum()
@@ -122,8 +112,22 @@ def lattice_plot(lattice):
     T = 1 / BJs
     lattice = lattice.copy()
     ms, E_means, E_stds = get_spin_energy(lattice, BJs)
-    plt.plot(T, ms, label='Metropolis'); plt.title('Avg spin per Temp'); plt.show(block=True)
-    plt.plot(T, E_means, label='Energy'); plt.title('Mean Energy per Temp'); plt.show(block=True)
-    plt.plot(T,E_stds); plt.title('Standard Deviation per Temp'); plt.show(block=True)
+    fig, axes = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
+
+    axes[0].plot(T, ms)
+    axes[0].set_ylabel('Avg spin per site')
+    axes[0].set_title('Average Spin vs Temperature')
+
+    axes[1].plot(T, E_means)
+    axes[1].set_ylabel('Mean Energy per site')
+    axes[1].set_title('Energy vs Temperature')
+
+    axes[2].plot(T, E_stds)
+    axes[2].set_ylabel('Energy Std Dev')
+    axes[2].set_xlabel('Temperature')
+    axes[2].set_title('Fluctuations vs Temperature')
+
+    fig.tight_layout()
+    plt.show()
 
 lattice_plot(lattice_p)
