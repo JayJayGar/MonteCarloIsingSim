@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import numba
-from numba import njit
 from scipy.ndimage import convolve, generate_binary_structure
 import scipy.ndimage as sp
 
@@ -29,7 +28,7 @@ def get_energy(lattice):
     E -= np.sum(lattice[:, :-1] * lattice[:, 1:])
     # interaction with both top and bottom neighbors
     E -= np.sum(lattice[:-1, :] * lattice[1:, :])
-    return E * J
+    return E * J / 2 #double counting
 
 print(get_energy(lattice_p))
 
@@ -88,14 +87,31 @@ def metropolis(spin_arr, times, BJ, energy):
 
 def get_spin_energy(lattice, BJs):
     ms = np.zeros(len(BJs))
+    ms_abs = np.zeros(len(BJs))
     E_means = np.zeros(len(BJs))
     E_stds = np.zeros(len(BJs))
+    E_vars = np.zeros(len(BJs))
+    C = np.zeros(len(BJs))
     for i, bj in enumerate(BJs):
         spins, energies = metropolis(lattice, 600000, bj, get_energy(lattice))
-        ms[i] = spins[-100000:].mean() / N ** 2
-        E_means[i] = energies[-100000:].mean() / N ** 2
-        E_stds[i] = energies[-100000:].std() / N ** 2
-    return ms, E_means, E_stds
+
+        # Post EQ spins and energies
+        eq_S = spins[-100000:]
+        eq_E = energies[-100000:]
+        T=1/bj
+
+
+        ms[i] = eq_S.mean() / N ** 2 # Normalized magnetization / spin
+        ms_abs[i] = np.mean(np.abs(eq_S)) / N ** 2 # Normalized absolute magnetization
+
+        E_means[i] = eq_E.mean() / N ** 2
+        E_stds[i] = eq_E.std() / N ** 2
+        E_vars[i] = eq_E.var() / N ** 4
+
+        #Heat capacity per spin -- k_b = 1
+        C[i]= E_vars[i] / (T**2 * N ** 2)
+
+    return ms, E_means, E_stds, E_vars, C, ms_abs
 
 
 
@@ -108,24 +124,41 @@ def get_spin_energy(lattice, BJs):
 # plt.show(block=True)
 
 def lattice_plot(lattice):
-    BJs = np.arange(0.3, 1, 0.025)
-    T = 1 / BJs
+    T = np.arange(0.5, 5, 0.1)
+    BJs = 1/T
+
     lattice = lattice.copy()
-    ms, E_means, E_stds = get_spin_energy(lattice, BJs)
-    fig, axes = plt.subplots(3, 1, figsize=(8, 10), sharex=True)
+    ms, E_means, E_stds, E_vars, C, ms_abs = get_spin_energy(lattice, BJs)
+    Tc = 2.269  # critical temperature
+    fig, axes = plt.subplots(3, 2, figsize=(8, 10), sharex=True)
 
-    axes[0].plot(T, ms)
-    axes[0].set_ylabel('Avg spin per site')
-    axes[0].set_title('Average Spin vs Temperature')
+    axes[0, 0].plot(T, ms)
+    axes[0, 0].set_ylabel('Avg spin per site')
+    axes[0, 0].set_title('Average Spin vs Temperature')
+    axes[0, 0].axvline(Tc, color='r', linestyle='--')
 
-    axes[1].plot(T, E_means)
-    axes[1].set_ylabel('Mean Energy per site')
-    axes[1].set_title('Energy vs Temperature')
+    axes[1, 0].plot(T, E_means)
+    axes[1, 0].set_ylabel('Mean Energy per site')
+    axes[1, 0].set_title('Energy vs Temperature')
+    axes[1, 0].axvline(Tc, color='r', linestyle='--')
 
-    axes[2].plot(T, E_stds)
-    axes[2].set_ylabel('Energy Std Dev')
-    axes[2].set_xlabel('Temperature')
-    axes[2].set_title('Fluctuations vs Temperature')
+    axes[2, 0].plot(T, E_stds)
+    axes[2, 0].set_ylabel('Energy Std Dev')
+    axes[2, 0].set_xlabel('Temperature')
+    axes[2, 0].set_title('Energy Fluctuations vs Temperature')
+    axes[2, 0].set_ylim(0, 0.8)
+    axes[2, 0].axvline(Tc, color='r', linestyle='--')
+
+    axes[0, 1].plot(T, C)
+    axes[0, 1].set_ylabel('C')
+    axes[0, 1].set_title('Heat Fluctuations vs Temperature')
+    axes[0, 1].axvline(Tc, color='r', linestyle='--')
+
+    axes[0, 1].plot(T, ms_abs)
+    axes[0, 1].set_ylabel('<|M|>')
+    axes[0, 1].set_title('Absolute Magnetization vs Temperature')
+    axes[0, 1].axvline(Tc, color='r', linestyle='--')
+
 
     fig.tight_layout()
     plt.show()
