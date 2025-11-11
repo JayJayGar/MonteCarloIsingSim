@@ -62,36 +62,16 @@ def metropolis(spin_arr, times, BJ, energy):
     return net_spins, net_energy
 
 
-# spins, energies = metropolis(lattice_n, 1000000, 0.5, get_energy(lattice_n))
-#
-# fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-#
-# # Average spin plot
-# ax = axes[0]
-# ax.plot(spins / N**2)
-# ax.set_xlabel('Algorithm Time Steps')
-# ax.set_ylabel(r'Average Spin $\bar{m}$')
-# ax.grid()
-#
-# # Energy plot
-# ax = axes[1]
-# ax.plot(energies)
-# ax.set_xlabel('Algorithm Time Steps')
-# ax.set_ylabel(r'Energy $E/J$')
-# ax.grid()
-#
-# fig.tight_layout()
-# fig.suptitle(r'Evolution of Average Spin and Energy for $\beta J=$0.7', y=1.07, size=18)
-# plt.show()
-
-
 def get_spin_energy(lattice, BJs):
     ms = np.zeros(len(BJs))
     ms_abs = np.zeros(len(BJs))
+    ms_vars = np.zeros(len(BJs))
     E_means = np.zeros(len(BJs))
     E_stds = np.zeros(len(BJs))
     E_vars = np.zeros(len(BJs))
     C = np.zeros(len(BJs))
+    chi = np.zeros(len(BJs))
+    chi_prime = np.zeros(len(BJs))
     for i, bj in enumerate(BJs):
         spins, energies = metropolis(lattice, 600000, bj, get_energy(lattice))
 
@@ -103,15 +83,21 @@ def get_spin_energy(lattice, BJs):
 
         ms[i] = eq_S.mean() / N ** 2 # Normalized magnetization / spin
         ms_abs[i] = np.mean(np.abs(eq_S)) / N ** 2 # Normalized absolute magnetization
-
         E_means[i] = eq_E.mean() / N ** 2
         E_stds[i] = eq_E.std() / N ** 2
-        E_vars[i] = eq_E.var() / N ** 4
+
+        # Variances
+        ms_vars[i] = eq_S.var()
+        E_vars[i] = eq_E.var()
 
         #Heat capacity per spin -- k_b = 1
-        C[i]= E_vars[i] / (T**2 * N ** 2)
+        C[i]= E_vars[i] / (T**2 * N**2)
+        #Susceptibility chi
+        chi[i] = ms_vars[i] / (T * N**2)
+        #Expected chi'
+        chi_prime[i] = (np.mean(eq_S**2) - np.mean(np.abs(eq_S))**2) / (T * N**2)
 
-    return ms, E_means, E_stds, E_vars, C, ms_abs
+    return ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime
 
 
 
@@ -126,10 +112,17 @@ def get_spin_energy(lattice, BJs):
 def lattice_plot(lattice):
     T = np.arange(0.5, 5, 0.1)
     BJs = 1/T
+    global Tc
+    Tc = 2.269  # critical temperature
 
     lattice = lattice.copy()
-    ms, E_means, E_stds, E_vars, C, ms_abs = get_spin_energy(lattice, BJs)
-    Tc = 2.269  # critical temperature
+    ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime = get_spin_energy(lattice, BJs)
+    plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T)
+    plot_chis(chi, chi_prime, T)
+
+
+
+def plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T):
     fig, axes = plt.subplots(3, 2, figsize=(8, 10), sharex=True)
 
     axes[0, 0].plot(T, ms)
@@ -154,11 +147,25 @@ def lattice_plot(lattice):
     axes[0, 1].set_title('Heat Fluctuations vs Temperature')
     axes[0, 1].axvline(Tc, color='r', linestyle='--')
 
-    axes[0, 1].plot(T, ms_abs)
-    axes[0, 1].set_ylabel('<|M|>')
-    axes[0, 1].set_title('Absolute Magnetization vs Temperature')
-    axes[0, 1].axvline(Tc, color='r', linestyle='--')
+    axes[1, 1].plot(T, ms_abs)
+    axes[1, 1].set_ylabel('<|M|>')
+    axes[1, 1].set_title('Absolute Magnetization vs Temperature')
+    axes[1, 1].axvline(Tc, color='r', linestyle='--')
 
+    fig.tight_layout()
+    plt.show()
+
+def plot_chis(chi, chi_prime, T):
+    fig, axes = plt.subplots(1, 2, figsize=(8, 10), sharex=True)
+    axes[0].plot(T, chi)
+    axes[0].set_ylabel('Chi')
+    axes[0].set_xlabel('Temperature')
+    axes[0].axvline(Tc, color='r', linestyle='--')
+
+    axes[1].plot(T, chi_prime)
+    axes[1].set_ylabel('Chi Prime')
+    axes[1].set_xlabel('Temperature')
+    axes[1].axvline(Tc, color='r', linestyle='--')
 
     fig.tight_layout()
     plt.show()
