@@ -73,7 +73,7 @@ def get_spin_energy(lattice, BJs):
     chi = np.zeros(len(BJs))
     chi_prime = np.zeros(len(BJs))
     for i, bj in enumerate(BJs):
-        spins, energies = metropolis(lattice, 600000, bj, get_energy(lattice))
+        spins, energies = metropolis(lattice, 1000000, bj, get_energy(lattice))
 
         # Post EQ spins and energies
         eq_S = spins[-100000:]
