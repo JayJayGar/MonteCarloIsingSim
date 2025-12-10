@@ -8,18 +8,13 @@ m_x = 0.1
 epsilon =0.1
 N = 3
 
-x = torch.tensor([+1.0,+1.0,+1.0]) #all spins in this scenario, all spins
+x = torch.tensor([+1.0,+1.0,+1.0]) #all spins
 m = float(torch.mean(x)) # sigma(x) representation equals m(x)
 
-W = torch.zeros(3, N)
-W[0, :] = 1.0
-W[1, :] = -1.0
-W[2, :] = 1.0
-W = W / (N * (1 + epsilon))
+W = torch.tensor([[1.0]*N, [-1.0]*N, [1.0]*N]) / (N * (1 + epsilon))
 print(W)
 
-b = torch.tensor([-1,-1,1])
-b = b * epsilon / (1 + epsilon)
+b = (torch.tensor([-1.0, -1.0, 1.0]) * epsilon / (1 + epsilon)).unsqueeze(1)
 print(b)
 
 # TIP matrix multiplication is @ or
@@ -33,8 +28,11 @@ Wx_b = torch.tensor([
 
 print(Wx_b)
 
-Wx_b = (W @ x + b).unsqueeze(1)
+Wx_b = (W @ x).unsqueeze(1) + b
 print(Wx_b)
+
+W2 = torch.tensor([[2.0, 1.0, -1.0], [-2.0, -2.0, 1.0]])
+b2 = torch.tensor([-1.0,-1.0,1.0])
 
 m, E = symbols('m(x) E')
 formulas = [
