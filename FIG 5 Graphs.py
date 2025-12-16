@@ -1,11 +1,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import glob
+from scipy.ndimage import zoom
 
 ## FIGURE 5(A), Fully implented NN with best weights
 epsilon = 1/3
 x_vals = np.array([-1,1])
-N=900
-randspins = 10000
+randspins = 1000
 
 def neuron1(m):
     return (m - epsilon) / (1 + epsilon)
@@ -36,13 +37,48 @@ plt.show()
 ## FIGURE 5(B) random initial weights, should represent a Bell curve scatterplot
 
 ## Mini-batches with col size N - spin_configs is random ising models
-configs_down = np.random.choice([-1, 1], size=(randspins//3, N), p=[0.98, 0.02])
-configs_neutral = np.random.choice([-1, 1], size=(randspins//3, N), p=[0.50, 0.50])
-configs_up = np.random.choice([-1, 1], size=(randspins//3, N), p=[0.02, 0.98])
+# block = randspins // 3
+# block_per_group = block // 3
+#
+# spin_configs = np.zeros((block, N))
+#
+# # Group 1: magnetization around -1 (mostly down spins)
+# for i in range(block_per_group):
+#     p_down = np.random.uniform(0.90, 1.0)  # 90-100% down spins
+#     spin_configs[i, :] = np.random.choice([-1, 1], size=N, p=[p_down, 1-p_down])
+#
+# # Group 2: magnetization around 0 (balanced)
+# for i in range(block_per_group, 2 * block_per_group):
+#     p_down = np.random.uniform(0.45, 0.55)  # 45-55% down spins (near 50/50)
+#     spin_configs[i, :] = np.random.choice([-1, 1], size=N, p=[p_down, 1-p_down])
+#
+# # Group 3: magnetization around +1 (mostly up spins)
+# for i in range(2 * block_per_group, block):
+#     p_down = np.random.uniform(0.0, 0.10)  # 0-10% down spins (90-100% up)
+#     spin_configs[i, :] = np.random.choice([-1, 1], size=N, p=[p_down, 1-p_down])
+#
+# m = np.mean(spin_configs, axis=1)
 
-spin_configs = np.vstack([configs_down, configs_neutral, configs_up])
+
+configs_list = []
+file_list = sorted(glob.glob("TestSpins/spins*.npy"))
+
+for file_path in file_list:
+    try:
+        data = np.load(file_path)
+        configs_list.append(data.flatten())
+    except Exception as e:
+        print(f"Error loading {file_path}: {e}")
+
+spin_configs = np.array(configs_list)
+print(spin_configs.shape)
+N = spin_configs.shape[1]
+
+print(spin_configs)
 
 m = np.mean(spin_configs, axis=1)
+sorted_idx = np.argsort(m)
+m_sorted = m[sorted_idx]
 
 
 # 0 mean, unit std
@@ -56,11 +92,11 @@ print(activations)
 plt.figure(figsize=(10, 4))
 
 
-plt.scatter(m, activations[0, :],
+plt.scatter(m_sorted, activations[0, :],
             label='Neuron 1', color='blue', alpha=0.5, s=10)
-plt.scatter(m, activations[1, :],
+plt.scatter(m_sorted, activations[1, :],
             label='Neuron 2', color='red', alpha=0.5, s=10)
-plt.scatter(m, activations[2, :],
+plt.scatter(m_sorted, activations[2, :],
             label='Neuron 3', color='green', alpha=0.5, s=10)
 
 plt.show()

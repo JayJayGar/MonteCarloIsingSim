@@ -3,10 +3,13 @@ import matplotlib.pyplot as plt
 import numba
 from scipy.ndimage import convolve, generate_binary_structure
 import scipy.ndimage as sp
+import os
 
+folder_name = "TestSpins"
+os.makedirs(folder_name, exist_ok=True)
 
-# 50 by 50 grid
-N = 50
+# N by N grid
+N = 30
 
 init_random = np.random.random((N,N))
 lattice_n = np.zeros((N,N))
@@ -59,10 +62,12 @@ def metropolis(spin_arr, times, BJ, energy):
         net_spins[t] = spin_arr.sum()
         net_energy[t] = energy
 
-    return net_spins, net_energy
+    tests = spin_arr.flatten()
+
+    return net_spins, net_energy, tests
 
 
-def get_spin_energy(lattice, BJs):
+def get_spin_energy(lattice, BJs, run_index):
     ms = np.zeros(len(BJs))
     ms_abs = np.zeros(len(BJs))
     ms_vars = np.zeros(len(BJs))
@@ -73,11 +78,12 @@ def get_spin_energy(lattice, BJs):
     chi = np.zeros(len(BJs))
     chi_prime = np.zeros(len(BJs))
     for i, bj in enumerate(BJs):
-        spins, energies = metropolis(lattice, 1000000, bj, get_energy(lattice))
+        spins, energies, tests = metropolis(lattice, 1000000, bj, get_energy(lattice))
 
         # Post EQ spins and energies
         eq_S = spins[-100000:]
         eq_E = energies[-100000:]
+        np.save(f"{folder_name}/spins{i}_run{run_index}", tests)
         T=1/bj
 
 
@@ -109,16 +115,16 @@ def get_spin_energy(lattice, BJs):
 # plt.xlabel('Temperature')
 # plt.show(block=True)
 
-def lattice_plot(lattice):
+def lattice_plot(lattice, run_index):
     T = np.arange(0.5, 5, 0.1)
     BJs = 1/T
     global Tc
     Tc = 2.269  # critical temperature
 
     lattice = lattice.copy()
-    ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime = get_spin_energy(lattice, BJs)
-    plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T)
-    plot_chis(chi, chi_prime, T)
+    ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime = get_spin_energy(lattice, BJs, run_index)
+    # plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T)
+    # plot_chis(chi, chi_prime, T)
 
 
 
@@ -170,4 +176,6 @@ def plot_chis(chi, chi_prime, T):
     fig.tight_layout()
     plt.show()
 
-lattice_plot(lattice_p)
+for i in range(10):
+    lattice_plot(lattice_p, i+1)
+    lattice_plot(lattice_n, -i-1)
