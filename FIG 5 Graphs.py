@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import glob
+import torch
 from scipy.ndimage import zoom
 
 ## FIGURE 5(A), Fully implented NN with best weights
@@ -97,6 +98,31 @@ plt.scatter(m_sorted, activations[0, :],
 plt.scatter(m_sorted, activations[1, :],
             label='Neuron 2', color='red', alpha=0.5, s=10)
 plt.scatter(m_sorted, activations[2, :],
+            label='Neuron 3', color='green', alpha=0.5, s=10)
+
+plt.show()
+
+## FIGURE 5(C) trained weights to create a graph similar to the first figure
+from Toy_Model import ToyModel
+
+model = ToyModel(900)
+model.load_state_dict(torch.load("toy_model.pth"))
+model.eval()
+print(model.W1)
+
+W_trained = model.W1.detach().numpy()
+b_trained = model.b1.detach().numpy()
+
+activations = spin_configs @ W_trained.T + b_trained
+print(activations)
+
+plt.figure(figsize=(10, 4))
+
+plt.scatter(m_sorted, activations[sorted_idx, 0],
+            label='Neuron 1', color='orange', alpha=0.5, s=10)
+plt.scatter(m_sorted, activations[sorted_idx, 1],
+            label='Neuron 2', color='purple', alpha=0.5, s=10)
+plt.scatter(m_sorted, activations[sorted_idx, 2],
             label='Neuron 3', color='green', alpha=0.5, s=10)
 
 plt.show()

@@ -24,6 +24,8 @@ lattice_p = np.zeros((N,N))
 lattice_p[init_random>=0.25] = 1
 lattice_p[init_random<0.25] = -1
 
+configs = []
+labels = []
 
 def get_energy(lattice):
     E, J = 0, 1
@@ -83,7 +85,6 @@ def get_spin_energy(lattice, BJs, run_index):
         # Post EQ spins and energies
         eq_S = spins[-100000:]
         eq_E = energies[-100000:]
-        np.save(f"{folder_name}/spins{i}_run{run_index}", tests)
         T=1/bj
 
 
@@ -91,6 +92,12 @@ def get_spin_energy(lattice, BJs, run_index):
         ms_abs[i] = np.mean(np.abs(eq_S)) / N ** 2 # Normalized absolute magnetization
         E_means[i] = eq_E.mean() / N ** 2
         E_stds[i] = eq_E.std() / N ** 2
+
+        label = 0 if ms_abs[i] > 0.5 else 1
+
+        configs.append(tests)
+        labels.append(label)
+        np.save(f"{folder_name}/spins{i}_run{run_index}", tests)
 
         # Variances
         ms_vars[i] = eq_S.var()
@@ -123,8 +130,8 @@ def lattice_plot(lattice, run_index):
 
     lattice = lattice.copy()
     ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime = get_spin_energy(lattice, BJs, run_index)
-    # plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T)
-    # plot_chis(chi, chi_prime, T)
+    plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T)
+    plot_chis(chi, chi_prime, T)
 
 
 
@@ -176,6 +183,11 @@ def plot_chis(chi, chi_prime, T):
     fig.tight_layout()
     plt.show()
 
-for i in range(10):
-    lattice_plot(lattice_p, i+1)
-    lattice_plot(lattice_n, -i-1)
+def get_tests():
+    for i in range(10):
+        lattice_plot(lattice_p, i + 1)
+        lattice_plot(lattice_n, -i - 1)
+
+lattice_plot(lattice_p, 1)
+configs_array = np.array(configs); np.save(f"{folder_name}/train_configs.npy", configs_array)
+labels_array = np.array(labels); np.save(f"{folder_name}/train_labels.npy", labels_array)
