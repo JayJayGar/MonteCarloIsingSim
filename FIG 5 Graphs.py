@@ -104,25 +104,40 @@ plt.show()
 
 ## FIGURE 5(C) trained weights to create a graph similar to the first figure
 from Toy_Model import ToyModel
+# from Full_Model import FullModel
 
 model = ToyModel(900)
+# model = FullModel(900)
 model.load_state_dict(torch.load("toy_model.pth"))
 model.eval()
-print(model.W1)
+
+test_spins = []
+m_values_systematic = []
+
+for m in np.linspace(-1.0, 1.0, 200):
+    n_up = int(N * (1 + m) / 2)
+    spins = np.ones(N)
+    spins[n_up:] = -1
+    np.random.shuffle(spins)
+    test_spins.append(spins)
+    m_values_systematic.append(m)
+
+test_spins = np.array(test_spins)  # [n_points, N]
+m_values_systematic = np.array(m_values_systematic)  # [n_points]
 
 W_trained = model.W1.detach().numpy()
 b_trained = model.b1.detach().numpy()
 
-activations = spin_configs @ W_trained.T + b_trained
+activations_systematic = test_spins @ W_trained.T + b_trained
 print(activations)
 
 plt.figure(figsize=(10, 4))
 
-plt.scatter(m_sorted, activations[sorted_idx, 0],
+plt.scatter(m_values_systematic, activations_systematic[:, 0],
             label='Neuron 1', color='orange', alpha=0.5, s=10)
-plt.scatter(m_sorted, activations[sorted_idx, 1],
+plt.scatter(m_values_systematic, activations_systematic[:, 1],
             label='Neuron 2', color='purple', alpha=0.5, s=10)
-plt.scatter(m_sorted, activations[sorted_idx, 2],
+plt.scatter(m_values_systematic, activations_systematic[:, 2],
             label='Neuron 3', color='green', alpha=0.5, s=10)
 
 plt.show()

@@ -1,6 +1,5 @@
 # To be added
 import torch
-from sympy import false
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
@@ -19,7 +18,7 @@ class ToyModel(nn.Module):
         output = hidden @ self.W2.T + self.b2
         return output
 
-def trainmodel(train_configs, train_labels, epocs=1000, lr=0.001):
+def trainmodel(train_configs, train_labels, epochs=200, lr=0.001, lambda_reg=0.001):
     n_inputs = train_configs.shape[1]
     model = ToyModel(n_inputs)
 
@@ -32,11 +31,14 @@ def trainmodel(train_configs, train_labels, epocs=1000, lr=0.001):
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    for epoch in range(epocs):
+    for epoch in range(epochs):
         epoch_loss = 0
         for batch_X, batch_y in dataloader:
             outputs = model(batch_X)
-            loss = criterion(outputs, batch_y)
+
+            ce_loss = criterion(outputs, batch_y)
+            l1_loss = lambda_reg * torch.norm(model.W1, 1)  # Penalize complex weights
+            loss = ce_loss + l1_loss
 
             optimizer.zero_grad()
             loss.backward()

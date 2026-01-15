@@ -7,7 +7,7 @@ import numpy as np
 class FullModel(nn.Module):
     def __init__(self, n_inputs):
         super(FullModel, self).__init__()
-        self.W1 = nn.Parameter(torch.randn(100, n_inputs) * 0.01)  # 100 hidden!
+        self.W1 = nn.Parameter(torch.randn(100, n_inputs) * 0.01)
         self.b1 = nn.Parameter(torch.zeros(100))
         self.W2 = nn.Parameter(torch.randn(2, 100) * 0.01)
         self.b2 = nn.Parameter(torch.zeros(2))
@@ -49,3 +49,5 @@ def trainmodel(train_configs, train_labels, epocs=200, lr=0.01):
 train_configs = np.load("TestSpins/train_configs.npy")
 train_labels = np.load("TestSpins/train_labels.npy")
 trained_model = trainmodel(train_configs, train_labels)
+
+torch.save(trained_model.state_dict(), "full_model.pth")

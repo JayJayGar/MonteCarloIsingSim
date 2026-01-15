@@ -10,6 +10,8 @@ os.makedirs(folder_name, exist_ok=True)
 
 # N by N grid
 N = 30
+global Tc
+Tc = 2.269  # critical temperature
 
 init_random = np.random.random((N,N))
 lattice_n = np.zeros((N,N))
@@ -23,6 +25,11 @@ init_random = np.random.random((N,N))
 lattice_p = np.zeros((N,N))
 lattice_p[init_random>=0.25] = 1
 lattice_p[init_random<0.25] = -1
+
+init_random = np.random.random((N,N))
+lattice_r = np.zeros((N,N))
+lattice_r[init_random>=0.50] = 1
+lattice_r[init_random<0.50] = -1
 
 configs = []
 labels = []
@@ -93,10 +100,6 @@ def get_spin_energy(lattice, BJs, run_index):
         E_means[i] = eq_E.mean() / N ** 2
         E_stds[i] = eq_E.std() / N ** 2
 
-        label = 0 if ms_abs[i] > 0.5 else 1
-
-        configs.append(tests)
-        labels.append(label)
         np.save(f"{folder_name}/spins{i}_run{run_index}", tests)
 
         # Variances
@@ -113,7 +116,26 @@ def get_spin_energy(lattice, BJs, run_index):
     return ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime
 
 
+def get_spin_toy_data(lattice, run_index):
+    T = np.arange(0.5, 5, 0.1)
+    BJs = 1 / T
 
+    for i, bj in enumerate(BJs):
+        T = 1 / bj
+
+        if T >= Tc * 0.8 and T <= Tc * 1.2:
+            continue
+
+        spins, energies, tests = metropolis(lattice, 1000000, bj, get_energy(lattice))
+
+        # Assign label
+        if T < Tc * 0.8:
+            label = 0  # Low temperature
+        else:  # T > Tc * 1.2
+            label = 1  # High temperature
+
+        configs.append(tests)
+        labels.append(label)
 
 # plt.show(block=True)
 # plt.plot(BJs, ms_n, label='Metropolis')
@@ -125,8 +147,6 @@ def get_spin_energy(lattice, BJs, run_index):
 def lattice_plot(lattice, run_index):
     T = np.arange(0.5, 5, 0.1)
     BJs = 1/T
-    global Tc
-    Tc = 2.269  # critical temperature
 
     lattice = lattice.copy()
     ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime = get_spin_energy(lattice, BJs, run_index)
@@ -184,10 +204,12 @@ def plot_chis(chi, chi_prime, T):
     plt.show()
 
 def get_tests():
-    for i in range(10):
-        lattice_plot(lattice_p, i + 1)
-        lattice_plot(lattice_n, -i - 1)
+    for i in range(4):
+        get_spin_toy_data(lattice_p, 1)
+        get_spin_toy_data(lattice_n, 1)
 
-lattice_plot(lattice_p, 1)
+# for i in range(5):
+#     lattice_plot(lattice_r, 1)
+get_tests()
 configs_array = np.array(configs); np.save(f"{folder_name}/train_configs.npy", configs_array)
 labels_array = np.array(labels); np.save(f"{folder_name}/train_labels.npy", labels_array)
