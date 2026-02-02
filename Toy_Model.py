@@ -7,18 +7,21 @@ import numpy as np
 class ToyModel(nn.Module):
     def __init__(self, n_inputs):
         super(ToyModel, self).__init__()
-        self.W1 = nn.Parameter(torch.randn(3, n_inputs) * 0.1)
-        self.b1 = nn.Parameter(torch.zeros(3))
+        std = np.sqrt(2.0 / (n_inputs + 3))
+        self.W1 = nn.Parameter(torch.randn(3, n_inputs) * std)
+        self.b1 = nn.Parameter(torch.tensor([-1.0, 0.0, 1.0]))
 
         self.W2 = nn.Parameter(torch.randn(2, 3) * 0.1)
         self.b2 = nn.Parameter(torch.zeros(2))
 
+        self.n_inputs = n_inputs
+
     def forward(self, x):
-        hidden = torch.sigmoid(x @ self.W1.T + self.b1)
+        hidden = torch.sigmoid(x @ self.W1.T / np.sqrt(self.n_inputs) + self.b1)
         output = hidden @ self.W2.T + self.b2
         return output
 
-def trainmodel(train_configs, train_labels, epochs=200, lr=0.001, lambda_reg=0.001):
+def trainmodel(train_configs, train_labels, epochs=600, lr=0.01, lambda_reg=0.0):
     n_inputs = train_configs.shape[1]
     model = ToyModel(n_inputs)
 
@@ -37,7 +40,7 @@ def trainmodel(train_configs, train_labels, epochs=200, lr=0.001, lambda_reg=0.0
             outputs = model(batch_X)
 
             ce_loss = criterion(outputs, batch_y)
-            l1_loss = lambda_reg * torch.norm(model.W1, 1)  # Penalize complex weights
+            l1_loss = lambda_reg * (torch.norm(model.W1, 1) + torch.norm(model.W2, 1))
             loss = ce_loss + l1_loss
 
             optimizer.zero_grad()
@@ -46,8 +49,8 @@ def trainmodel(train_configs, train_labels, epochs=200, lr=0.001, lambda_reg=0.0
 
             epoch_loss += loss.item()
 
-            if epoch % 10 == 0:
-                print(f"epoch {epoch}, loss {epoch_loss}")
+        if epoch % 10 == 0:
+            print(f"epoch {epoch}, loss {epoch_loss}")
     return model
 
 train_configs = np.load("TestSpins/train_configs.npy")

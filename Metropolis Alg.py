@@ -8,57 +8,53 @@ import os
 folder_name = "TestSpins"
 os.makedirs(folder_name, exist_ok=True)
 
-# N by N grid
-N = 30
+# L by L grid = N
+L = 30
 global Tc
 Tc = 2.269  # critical temperature
 
-init_random = np.random.random((N,N))
-lattice_n = np.zeros((N,N))
+init_random = np.random.random((L,L))
+lattice_n = np.zeros((L,L))
 lattice_n[init_random>=0.75] = 1
 lattice_n[init_random<0.75] = -1
 
-# print(init_random)
-print(lattice_n)
-
-init_random = np.random.random((N,N))
-lattice_p = np.zeros((N,N))
+init_random = np.random.random((L,L))
+lattice_p = np.zeros((L,L))
 lattice_p[init_random>=0.25] = 1
 lattice_p[init_random<0.25] = -1
 
-init_random = np.random.random((N,N))
-lattice_r = np.zeros((N,N))
+init_random = np.random.random((L,L))
+lattice_r = np.zeros((L,L))
 lattice_r[init_random>=0.50] = 1
 lattice_r[init_random<0.50] = -1
+
+lattice_ones = np.ones((L,L))
 
 configs = []
 labels = []
 
 def get_energy(lattice):
     E, J = 0, 1
-    # interaction with both left and right neighbors
-    E -= np.sum(lattice[:, :-1] * lattice[:, 1:])
-    # interaction with both top and bottom neighbors
-    E -= np.sum(lattice[:-1, :] * lattice[1:, :])
-    return E * J / 2 #double counting
+    right = np.roll(lattice, -1, axis=1)
+    down = np.roll(lattice, -1, axis=0)
+    return -J * np.sum(lattice * (right + down))
 
-print(get_energy(lattice_p))
+print(get_energy(lattice_ones))
 
 @numba.njit
 def metropolis(spin_arr, times, BJ, energy):
-    spin_arr = spin_arr.copy()
     net_spins = np.zeros(times-1)
     net_energy = np.zeros(times-1)
     for t in range(0, times-1):
         # pick a random point on array and flip spin
-        x = np.random.randint(0,N)
-        y = np.random.randint(0,N)
+        x = np.random.randint(0,L)
+        y = np.random.randint(0,L)
         # spin_i = spin_arr[x,y]
 
-        xL = (x - 1) % N
-        xR = (x + 1) % N
-        yU = (y - 1) % N
-        yD = (y + 1) % N
+        xL = (x - 1) % L
+        xR = (x + 1) % L
+        yU = (y - 1) % L
+        yD = (y + 1) % L
         dE = 2 * spin_arr[x, y] * (
                 spin_arr[xL, y] + spin_arr[xR, y] +
                 spin_arr[x, yU] + spin_arr[x, yD]
@@ -75,8 +71,52 @@ def metropolis(spin_arr, times, BJ, energy):
 
     return net_spins, net_energy, tests
 
+@numba.njit
+def triangular_metropolis(spin_arr, times, BJ, energy):
+    spin_arr = spin_arr.copy()
+    net_spins = np.zeros(times-1)
+    net_energy = np.zeros(times-1)
+    for t in range(0, times-1):
+        x = np.random.randint(0, L)
+        y = np.random.randint(0, L)
+        if not (y & 1): #even
+            neighbors = [
+                spin_arr[(x-1)%L][(y-1)%L],
+                spin_arr[(x-1)%L][y],
+                spin_arr[x][(y-1)%L],
+                spin_arr[x][(y+1)%L],
+                spin_arr[(x+1)%L][(y-1)%L],
+                spin_arr[(x+1)%L][y]
+            ]
+        else: #odd
+            neighbors = [
+                spin_arr[(x-1)%L][y],
+                spin_arr[(x-1)%L][(y+1)%L],
+                spin_arr[x][(y-1)%L],
+                spin_arr[x][(y+1)%L],
+                spin_arr[(x+1)%L][y],
+                spin_arr[(x+1)%L][(y+1)%L]
+            ]
+        dE = 2 * spin_arr[x, y] * sum(neighbors)
+        if (dE <= 0) or (np.random.random() < np.exp(-BJ * dE)):
+            spin_arr[x, y] *= -1  # flip selected spin
+            energy += dE
 
-def get_spin_energy(lattice, BJs, run_index):
+        net_spins[t] = spin_arr.sum()
+        net_energy[t] = energy
+
+    tests = spin_arr.flatten()
+
+    return net_spins, net_energy, tests
+
+ALGORITHMS = {
+    'square': metropolis,
+    'triangular': triangular_metropolis,
+    # "square-ice"
+}
+
+
+def get_spin_energy(lattice, BJs, run_index, lattice_shape):
     ms = np.zeros(len(BJs))
     ms_abs = np.zeros(len(BJs))
     ms_vars = np.zeros(len(BJs))
@@ -87,7 +127,7 @@ def get_spin_energy(lattice, BJs, run_index):
     chi = np.zeros(len(BJs))
     chi_prime = np.zeros(len(BJs))
     for i, bj in enumerate(BJs):
-        spins, energies, tests = metropolis(lattice, 1000000, bj, get_energy(lattice))
+        spins, energies, tests = ALGORITHMS[lattice_shape](lattice, 1000000, bj, get_energy(lattice))
 
         # Post EQ spins and energies
         eq_S = spins[-100000:]
@@ -95,10 +135,10 @@ def get_spin_energy(lattice, BJs, run_index):
         T=1/bj
 
 
-        ms[i] = eq_S.mean() / N ** 2 # Normalized magnetization / spin
-        ms_abs[i] = np.mean(np.abs(eq_S)) / N ** 2 # Normalized absolute magnetization
-        E_means[i] = eq_E.mean() / N ** 2
-        E_stds[i] = eq_E.std() / N ** 2
+        ms[i] = eq_S.mean() / L ** 2 # Normalized magnetization / spin
+        ms_abs[i] = np.mean(np.abs(eq_S)) / L ** 2 # Normalized absolute magnetization
+        E_means[i] = eq_E.mean() / L ** 2
+        E_stds[i] = eq_E.std() / L ** 2
 
         np.save(f"{folder_name}/spins{i}_run{run_index}", tests)
 
@@ -107,16 +147,16 @@ def get_spin_energy(lattice, BJs, run_index):
         E_vars[i] = eq_E.var()
 
         #Heat capacity per spin -- k_b = 1
-        C[i]= E_vars[i] / (T**2 * N**2)
+        C[i]= E_vars[i] / (T**2 * L**2)
         #Susceptibility chi
-        chi[i] = ms_vars[i] / (T * N**2)
+        chi[i] = ms_vars[i] / (T * L**2)
         #Expected chi'
-        chi_prime[i] = (np.mean(eq_S**2) - np.mean(np.abs(eq_S))**2) / (T * N**2)
+        chi_prime[i] = (np.mean(eq_S**2) - np.mean(np.abs(eq_S))**2) / (T * L**2)
 
     return ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime
 
 
-def get_spin_toy_data(lattice, run_index):
+def get_spin_toy_data(lattice, run_index, lattice_shape):
     T = np.arange(0.5, 5, 0.1)
     BJs = 1 / T
 
@@ -126,7 +166,7 @@ def get_spin_toy_data(lattice, run_index):
         if T >= Tc * 0.8 and T <= Tc * 1.2:
             continue
 
-        spins, energies, tests = metropolis(lattice, 1000000, bj, get_energy(lattice))
+        spins, energies, tests = ALGORITHMS[lattice_shape](lattice, 100000, bj, get_energy(lattice))
 
         # Assign label
         if T < Tc * 0.8:
@@ -144,12 +184,12 @@ def get_spin_toy_data(lattice, run_index):
 # plt.xlabel('Temperature')
 # plt.show(block=True)
 
-def lattice_plot(lattice, run_index):
+def lattice_plot(lattice, run_index, lattice_shape):
     T = np.arange(0.5, 5, 0.1)
     BJs = 1/T
 
     lattice = lattice.copy()
-    ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime = get_spin_energy(lattice, BJs, run_index)
+    ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime = get_spin_energy(lattice, BJs, run_index, lattice_shape)
     plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T)
     plot_chis(chi, chi_prime, T)
 
@@ -203,13 +243,17 @@ def plot_chis(chi, chi_prime, T):
     fig.tight_layout()
     plt.show()
 
-def get_tests():
-    for i in range(4):
-        get_spin_toy_data(lattice_p, 1)
-        get_spin_toy_data(lattice_n, 1)
-
 # for i in range(5):
-#     lattice_plot(lattice_r, 1)
+#     lattice_plot(lattice_ones, i+1, 'square')
+#     lattice_plot(-lattice_ones, -i, 'square')
+
+def get_tests():
+    for i in range(10):
+        get_spin_toy_data(lattice_ones, 0, 'square')
+        get_spin_toy_data(-lattice_ones, 0, 'square')
+
+
+
 get_tests()
 configs_array = np.array(configs); np.save(f"{folder_name}/train_configs.npy", configs_array)
 labels_array = np.array(labels); np.save(f"{folder_name}/train_labels.npy", labels_array)

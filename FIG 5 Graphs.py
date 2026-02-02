@@ -38,28 +38,6 @@ plt.show()
 ## FIGURE 5(B) random initial weights, should represent a Bell curve scatterplot
 
 ## Mini-batches with col size N - spin_configs is random ising models
-# block = randspins // 3
-# block_per_group = block // 3
-#
-# spin_configs = np.zeros((block, N))
-#
-# # Group 1: magnetization around -1 (mostly down spins)
-# for i in range(block_per_group):
-#     p_down = np.random.uniform(0.90, 1.0)  # 90-100% down spins
-#     spin_configs[i, :] = np.random.choice([-1, 1], size=N, p=[p_down, 1-p_down])
-#
-# # Group 2: magnetization around 0 (balanced)
-# for i in range(block_per_group, 2 * block_per_group):
-#     p_down = np.random.uniform(0.45, 0.55)  # 45-55% down spins (near 50/50)
-#     spin_configs[i, :] = np.random.choice([-1, 1], size=N, p=[p_down, 1-p_down])
-#
-# # Group 3: magnetization around +1 (mostly up spins)
-# for i in range(2 * block_per_group, block):
-#     p_down = np.random.uniform(0.0, 0.10)  # 0-10% down spins (90-100% up)
-#     spin_configs[i, :] = np.random.choice([-1, 1], size=N, p=[p_down, 1-p_down])
-#
-# m = np.mean(spin_configs, axis=1)
-
 
 configs_list = []
 file_list = sorted(glob.glob("TestSpins/spins*.npy"))
@@ -128,8 +106,8 @@ m_values_systematic = np.array(m_values_systematic)  # [n_points]
 W_trained = model.W1.detach().numpy()
 b_trained = model.b1.detach().numpy()
 
-activations_systematic = test_spins @ W_trained.T + b_trained
-print(activations)
+activations_systematic = test_spins @ W_trained.T / np.sqrt(N) + b_trained
+print(activations_systematic)
 
 plt.figure(figsize=(10, 4))
 
