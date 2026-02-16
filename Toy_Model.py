@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
+from matplotlib import pyplot as plt
 
 class ToyModel(nn.Module):
     def __init__(self, n_inputs):
@@ -76,3 +77,25 @@ print(trained_model.W1[1].mean())
 print(trained_model.W1[2].mean())
 
 torch.save(trained_model.state_dict(), "toy_model.pth")
+
+test_configs = np.load("TestSpins/test_configs.npy")
+test_temps = np.load("TestSpins/test_temps.npy")
+
+with torch.no_grad():
+    X_test = torch.tensor(test_configs, dtype=torch.float32)
+    outputs = trained_model(X_test)
+    probabilities = torch.softmax(outputs, dim=1).numpy()
+
+temps = test_temps
+
+unique_temps = np.unique(test_temps)
+avg_probs = np.zeros((len(unique_temps), 2))
+
+for i, temp in enumerate(unique_temps):
+    mask = test_temps == temp
+    avg_probs[i] = probabilities[mask].mean(axis=0)
+
+plt.figure(figsize=(5, 4))
+plt.plot(unique_temps, avg_probs[:, 0], 'b^-', label='T < Tc')
+plt.plot(unique_temps, avg_probs[:, 1], 'ro-', label='T > Tc')
+plt.show()

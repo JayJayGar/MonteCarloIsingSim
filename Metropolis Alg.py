@@ -4,6 +4,7 @@ import numba
 from scipy.ndimage import convolve, generate_binary_structure
 import scipy.ndimage as sp
 import os
+import time
 
 folder_name = "TestSpins"
 os.makedirs(folder_name, exist_ok=True)
@@ -30,16 +31,25 @@ lattice_r[init_random<0.50] = -1
 
 lattice_ones = np.ones((L,L))
 
-configs = []
-labels = []
+train_configs = []
+train_labels = []
+test_configs = []
+test_temps = []
 
-def get_energy(lattice):
+def get_energy(lattice, lattice_shape):
     E, J = 0, 1
     right = np.roll(lattice, -1, axis=1)
     down = np.roll(lattice, -1, axis=0)
-    return -J * np.sum(lattice * (right + down))
+    if lattice_shape == "square":
+        return -J * np.sum(lattice * (right + down))
+    elif lattice_shape == "triangular":
+        diag_down_right = np.roll(np.roll(lattice, -1, axis=0), -1, axis=1)
+        diag_down_left = np.roll(np.roll(lattice, -1, axis=0), 1, axis=1)
+        return -J * np.sum(lattice * (right + down + diag_down_right + diag_down_left))
+    raise Exception("Shape wrong or not implemented")
 
-print(get_energy(lattice_ones))
+# print(get_energy(lattice_ones, "square")
+# print(get_energy(lattice_ones, "triangular")
 
 @numba.njit
 def metropolis(spin_arr, times, BJ, energy):
@@ -49,12 +59,8 @@ def metropolis(spin_arr, times, BJ, energy):
         # pick a random point on array and flip spin
         x = np.random.randint(0,L)
         y = np.random.randint(0,L)
-        # spin_i = spin_arr[x,y]
 
-        xL = (x - 1) % L
-        xR = (x + 1) % L
-        yU = (y - 1) % L
-        yD = (y + 1) % L
+        xL = (x - 1) % L; xR = (x + 1) % L; yU = (y - 1) % L; yD = (y + 1) % L
         dE = 2 * spin_arr[x, y] * (
                 spin_arr[xL, y] + spin_arr[xR, y] +
                 spin_arr[x, yU] + spin_arr[x, yD]
@@ -73,7 +79,6 @@ def metropolis(spin_arr, times, BJ, energy):
 
 @numba.njit
 def triangular_metropolis(spin_arr, times, BJ, energy):
-    spin_arr = spin_arr.copy()
     net_spins = np.zeros(times-1)
     net_energy = np.zeros(times-1)
     for t in range(0, times-1):
@@ -127,7 +132,8 @@ def get_spin_energy(lattice, BJs, run_index, lattice_shape):
     chi = np.zeros(len(BJs))
     chi_prime = np.zeros(len(BJs))
     for i, bj in enumerate(BJs):
-        spins, energies, tests = ALGORITHMS[lattice_shape](lattice, 1000000, bj, get_energy(lattice))
+        spins, energies, tests = (
+            ALGORITHMS[lattice_shape](lattice, 1000000, bj, get_energy(lattice, lattice_shape)))
 
         # Post EQ spins and energies
         eq_S = spins[-100000:]
@@ -156,17 +162,16 @@ def get_spin_energy(lattice, BJs, run_index, lattice_shape):
     return ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime
 
 
-def get_spin_toy_data(lattice, run_index, lattice_shape):
-    T = np.arange(0.5, 5, 0.1)
-    BJs = 1 / T
-
+def get_spin_train_data(lattice, lattice_shape, BJs):
     for i, bj in enumerate(BJs):
-        T = 1 / bj
+        T = 1 / bj #type: ignore
 
-        if T >= Tc * 0.8 and T <= Tc * 1.2:
+        if Tc * 0.8 <= T <= Tc * 1.2:
             continue
 
-        spins, energies, tests = ALGORITHMS[lattice_shape](lattice, 100000, bj, get_energy(lattice))
+        lattice = lattice.copy()
+        spins, energies, data = (
+            ALGORITHMS[lattice_shape](lattice, 1000000, bj, get_energy(lattice, lattice_shape))) #type: ignore
 
         # Assign label
         if T < Tc * 0.8:
@@ -174,8 +179,19 @@ def get_spin_toy_data(lattice, run_index, lattice_shape):
         else:  # T > Tc * 1.2
             label = 1  # High temperature
 
-        configs.append(tests)
-        labels.append(label)
+        train_configs.append(data)
+        train_labels.append(label)
+
+def get_spin_test_data(lattice, lattice_shape, BJs):
+    for i, bj in enumerate(BJs):
+        T = 1 / bj #type: ignore
+
+        lattice = lattice.copy()
+        spins, energies, data = (
+            ALGORITHMS[lattice_shape](lattice, 1000000, bj, get_energy(lattice, lattice_shape))) #type: ignore
+
+        test_configs.append(data)
+        test_temps.append(T)
 
 # plt.show(block=True)
 # plt.plot(BJs, ms_n, label='Metropolis')
@@ -247,13 +263,19 @@ def plot_chis(chi, chi_prime, T):
 #     lattice_plot(lattice_ones, i+1, 'square')
 #     lattice_plot(-lattice_ones, -i, 'square')
 
-def get_tests():
+def toy_data():
+    T_range = np.arange(0.5, 5, 0.1)
+    BJs = 1 / T_range
     for i in range(10):
-        get_spin_toy_data(lattice_ones, 0, 'square')
-        get_spin_toy_data(-lattice_ones, 0, 'square')
+        print(f"Run {i+1}/10")
+        get_spin_train_data(lattice_ones, 'square', BJs)
+        get_spin_train_data(-lattice_ones, 'square', BJs)
 
+    get_spin_test_data(lattice_ones, 'square', BJs)
 
+toy_data()
+train_array = np.array(train_configs); np.save(f"{folder_name}/train_configs.npy", train_array)
+labels_array = np.array(train_labels); np.save(f"{folder_name}/train_labels.npy", labels_array)
 
-get_tests()
-configs_array = np.array(configs); np.save(f"{folder_name}/train_configs.npy", configs_array)
-labels_array = np.array(labels); np.save(f"{folder_name}/train_labels.npy", labels_array)
+test_array = np.array(test_configs); np.save(f"{folder_name}/test_configs.npy", test_array)
+temp_array = np.array(test_temps); np.save(f"{folder_name}/test_temps.npy", temp_array)
