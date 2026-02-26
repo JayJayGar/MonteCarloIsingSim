@@ -5,6 +5,8 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 from matplotlib import pyplot as plt
 
+Tc = 2.269
+
 class ToyModel(nn.Module):
     def __init__(self, n_inputs):
         super(ToyModel, self).__init__()
@@ -86,16 +88,31 @@ with torch.no_grad():
     outputs = trained_model(X_test)
     probabilities = torch.softmax(outputs, dim=1).numpy()
 
-temps = test_temps
+temps = np.round(test_temps, decimals=2)
 
-unique_temps = np.unique(test_temps)
+unique_temps = np.unique(temps)
 avg_probs = np.zeros((len(unique_temps), 2))
 
 for i, temp in enumerate(unique_temps):
-    mask = test_temps == temp
+    mask = temps == temp
     avg_probs[i] = probabilities[mask].mean(axis=0)
 
-plt.figure(figsize=(5, 4))
-plt.plot(unique_temps, avg_probs[:, 0], 'b^-', label='T < Tc')
-plt.plot(unique_temps, avg_probs[:, 1], 'ro-', label='T > Tc')
+near_Tc_mask = (test_temps > 2.0) & (test_temps < 2.5)
+print("Temps near Tc:", test_temps[near_Tc_mask])
+print("Probabilities:", probabilities[near_Tc_mask])
+
+fig, axes = plt.subplots(2, figsize=(8, 12), sharex=True)
+axes[0].plot(unique_temps, avg_probs[:, 0], 'b^-', label='T < Tc')
+axes[0].plot(unique_temps, avg_probs[:, 1], 'ro-', label='T > Tc')
+axes[0].axvline(Tc, color='y', linestyle='-')
+axes[0].set_xlim(1.0, 3.5)
+
+uncertainty = np.max(avg_probs, axis=1)
+axes[1].plot(unique_temps, uncertainty, 'o-')
+axes[1].axvspan(unique_temps.min(), Tc, alpha=0.1, color='blue')
+axes[1].axvspan(Tc, unique_temps.max(), alpha=0.1, color='red')
+axes[1].axvline(Tc, color='y', linestyle='-')
+axes[1].set_xticks(np.arange(1, 3.5, 0.5))
+axes[1].set_xlim(1.0, 3.5)
+axes[1].set_ylim(0, 1)
 plt.show()
