@@ -1,4 +1,3 @@
-# To be added
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
@@ -24,7 +23,7 @@ class ToyModel(nn.Module):
         output = hidden @ self.W2.T + self.b2
         return output
 
-def trainmodel(train_configs, train_labels, epochs=600, lr=0.01, lambda_reg=0.0):
+def trainmodel(train_configs, train_labels, epochs=600, lr=0.01, lambda_reg=0.00001):
     n_inputs = train_configs.shape[1]
     model = ToyModel(n_inputs)
 
@@ -35,7 +34,7 @@ def trainmodel(train_configs, train_labels, epochs=600, lr=0.01, lambda_reg=0.0)
     dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=lambda_reg)
 
     for epoch in range(epochs):
         epoch_loss = 0
@@ -43,8 +42,7 @@ def trainmodel(train_configs, train_labels, epochs=600, lr=0.01, lambda_reg=0.0)
             outputs = model(batch_X)
 
             ce_loss = criterion(outputs, batch_y)
-            l1_loss = lambda_reg * (torch.norm(model.W1, 1) + torch.norm(model.W2, 1))
-            loss = ce_loss + l1_loss
+            loss = ce_loss
 
             optimizer.zero_grad()
             loss.backward()
@@ -102,17 +100,24 @@ print("Temps near Tc:", test_temps[near_Tc_mask])
 print("Probabilities:", probabilities[near_Tc_mask])
 
 fig, axes = plt.subplots(2, figsize=(8, 12), sharex=True)
+
 axes[0].plot(unique_temps, avg_probs[:, 0], 'b^-', label='T < Tc')
 axes[0].plot(unique_temps, avg_probs[:, 1], 'ro-', label='T > Tc')
-axes[0].axvline(Tc, color='y', linestyle='-')
+axes[0].axvline(Tc, color='orange', linestyle='-')
 axes[0].set_xlim(1.0, 3.5)
+axes[0].legend()
 
 uncertainty = np.max(avg_probs, axis=1)
-axes[1].plot(unique_temps, uncertainty, 'o-')
+axes[1].plot(unique_temps, uncertainty, '^-', label='L=30')
 axes[1].axvspan(unique_temps.min(), Tc, alpha=0.1, color='blue')
 axes[1].axvspan(Tc, unique_temps.max(), alpha=0.1, color='red')
-axes[1].axvline(Tc, color='y', linestyle='-')
+axes[1].axvline(Tc, color='orange', linestyle='-')
 axes[1].set_xticks(np.arange(1, 3.5, 0.5))
 axes[1].set_xlim(1.0, 3.5)
 axes[1].set_ylim(0, 1)
+axes[1].set_xlabel('T')
+axes[1].set_ylabel('Accuracy')
+axes[1].legend()
+
+plt.tight_layout()
 plt.show()

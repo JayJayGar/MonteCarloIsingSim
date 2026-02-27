@@ -193,6 +193,25 @@ ALGORITHMS = {
     # "square-ice"
 }
 
+def block_average(data, block_size=500):
+    """
+    Compute block-averaged mean and variance to account for autocorrelations
+    in Monte Carlo data. Grouping into blocks decorrelates the samples,
+    giving a more accurate estimate of thermodynamic fluctuations.
+
+    Parameters:
+        data (ndarray): Time series of a thermodynamic observable.
+        block_size (int): Number of steps per block.
+
+    Returns:
+        mean (float): Block-averaged mean.
+        var (float): Block-averaged variance (ddof=1).
+    """
+    n_blocks = len(data) // block_size
+    blocks = data[:n_blocks * block_size].reshape(n_blocks, block_size)
+    block_means = np.mean(blocks, axis=1)
+    return np.mean(block_means), np.var(block_means, ddof=1)
+
 
 def get_spin_energy(lattice, BJs, run_index, lattice_shape):
     """
@@ -231,24 +250,21 @@ def get_spin_energy(lattice, BJs, run_index, lattice_shape):
         spins, energies, tests = (
             ALGORITHMS[lattice_shape](lattice, n_steps, bj, get_energy(lattice, lattice_shape)))
 
-        # Use only the last 100,000 steps (post-equilibration)
-        eq_S = spins[-100000:]
-        print(eq_S)
-        print(eq_S.var())
-        eq_E = energies[-100000:]
+        # Use only the last x steps (post-equilibration)
+        eq_S = spins[100000:]
+        eq_E = energies[100000:]
 
         # Normalized observables per spin
-        ms[i] = eq_S.mean() / L ** 2 # M
-        ms_abs[i] = np.mean(np.abs(eq_S)) / L ** 2 # |M|
-        E_means[i] = eq_E.mean() / L ** 2
+        ms[i], ms_vars[i] = block_average(eq_S)
+        ms[i] /= L ** 2
+        abs_mean, _ = block_average(np.abs(eq_S))
+        ms_abs[i] = abs_mean / L ** 2
+        E_means[i], E_vars[i] = block_average(eq_E)
+        E_means[i] /= L ** 2
         E_stds[i] = eq_E.std() / L ** 2
 
         # Save final spin configuration to file
         np.save(f"{folder_name}/spins{i}_run{run_index}", tests)
-
-        # Fluctuation quantities (unnormalized, used in C and chi below)
-        ms_vars[i] = eq_S.var()
-        E_vars[i] = eq_E.var()
 
         # Specific heat: C = Var(E) / (k_B T^2 N), with k_B = 1
         C[i]= E_vars[i] / (T**2 * L**2)
@@ -279,14 +295,14 @@ def get_spin_train_data(lattice, lattice_shape, BJs):
         T = 1 / bj #type: ignore
 
         # Skip the critical region to keep training labels clean
-        if Tc * 0.8 <= T <= Tc * 1.2:
+        if Tc * 0.85 <= T <= Tc * 1.15:
             continue
 
         lattice = lattice.copy()
         spins, energies, data = (
             ALGORITHMS[lattice_shape](lattice, 1000000, bj, get_energy(lattice, lattice_shape))) #type: ignore
 
-        label = 0 if T < Tc * 0.8 else 1  # 0: ordered, 1: disordered
+        label = 0 if T < Tc * 0.85 else 1  # 0: ordered, 1: disordered
 
         train_configs.append(data)
         train_labels.append(label)
@@ -417,22 +433,22 @@ def toy_data():
     """
     T_range = np.linspace(1.0, 3.5, 50)
     BJs = 1 / T_range
-    # for i in range(10):
-    #     print(f"Run {i+1}/10")
-    #     get_spin_train_data(lattice_ones, 'square', BJs)
-    #     get_spin_train_data(-lattice_ones, 'square', BJs)
-
-    get_spin_test_data(lattice_ones, 'square', BJs)
+    for i in range(30):
+        print(f"Run {i+1}/10")
+        # get_spin_train_data(lattice_ones, 'square', BJs)
+        # get_spin_train_data(-lattice_ones, 'square', BJs)
+        get_spin_test_data(lattice_ones, 'square', BJs)
+        get_spin_test_data(-lattice_ones, 'square', BJs)
 
 # Plot metropolis with positively charged lattice
-lattice_plot(lattice_ones, 1, 'square')
+# lattice_plot(lattice_ones, 1, 'square')
 
 # Plot metropolis with negatively charged lattice
-lattice_plot(-lattice_ones, -1, 'square')
+# lattice_plot(-lattice_ones, -1, 'square')
 
-# toy_data()
+toy_data()
 # train_array = np.array(train_configs); np.save(f"{folder_name}/train_configs.npy", train_array)
 # labels_array = np.array(train_labels); np.save(f"{folder_name}/train_labels.npy", labels_array)
 
-# test_array = np.array(test_configs); np.save(f"{folder_name}/test_configs.npy", test_array)
-# temp_array = np.array(test_temps); np.save(f"{folder_name}/test_temps.npy", temp_array)
+test_array = np.array(test_configs); np.save(f"{folder_name}/test_configs.npy", test_array)
+temp_array = np.array(test_temps); np.save(f"{folder_name}/test_temps.npy", temp_array)
