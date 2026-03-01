@@ -12,8 +12,6 @@ os.makedirs(folder_name, exist_ok=True)
 
 # L by L grid = N total spins
 L = 30
-global Tc
-Tc = 2.269  # Critical temperature for 2D Ising model (Onsager solution)
 
 # --- Lattice Initialization ---
 # Negatively biased: 75% spins down (-1)
@@ -59,14 +57,14 @@ def get_energy(lattice, lattice_shape):
         Exception: If an unsupported lattice shape is provided.
     """
     E, J = 0, 1
-    right = np.roll(lattice, -1, axis=1)    # Neighbour to the right
-    down = np.roll(lattice, -1, axis=0)     # Neighbour below
+    right = np.roll(lattice, -1, axis=1)    # Neighbor to the right
+    down = np.roll(lattice, -1, axis=0)     # Neighbor below
 
     if lattice_shape == "square":
-        # Each spin interacts with its right and down neighbours (avoids double-counting)
+        # Each spin interacts with its right and down neighbors (avoids double-counting)
         return -J * np.sum(lattice * (right + down))
     elif lattice_shape == "triangular":
-        # Triangular lattice has two additional diagonal neighbours
+        # Triangular lattice has two additional diagonal neighbors
         diag_down_right = np.roll(np.roll(lattice, -1, axis=0), -1, axis=1)
         diag_down_left = np.roll(np.roll(lattice, -1, axis=0), 1, axis=1)
         return -J * np.sum(lattice * (right + down + diag_down_right + diag_down_left))
@@ -103,7 +101,7 @@ def metropolis(spin_arr, times, BJ, energy):
         x = np.random.randint(0,L)
         y = np.random.randint(0,L)
 
-        # Periodic boundary conditions for neighbours
+        # Periodic boundary conditions for neighbors
         xL = (x - 1) % L; xR = (x + 1) % L;
         yU = (y - 1) % L; yD = (y + 1) % L
 
@@ -126,11 +124,11 @@ def metropolis(spin_arr, times, BJ, energy):
 
     return net_spins, net_energy, tests
 
-@numba.njit
+@numba.njit(cache=False)
 def triangular_metropolis(spin_arr, times, BJ, energy):
     """
     Run the Metropolis-Hastings algorithm on a triangular lattice.
-    Each spin has 6 neighbours; the neighbour pattern alternates based on
+    Each spin has 6 neighbors; the neighbor pattern alternates based on
     whether the column index is even or odd.
     JIT-compiled with Numba for performance.
 
@@ -147,12 +145,12 @@ def triangular_metropolis(spin_arr, times, BJ, energy):
     """
     net_spins = np.zeros(times-1)
     net_energy = np.zeros(times-1)
-    M = spin_arr.sum()
+    M = float(spin_arr.sum())
     for t in range(0, times-1):
         x = np.random.randint(0, L)
         y = np.random.randint(0, L)
 
-        # Neighbour layout depends on even/odd column (offset rows in triangular geometry)
+        # Neighbor layout depends on even/odd column (offset rows in triangular geometry)
         if not (y & 1): # Even column
             neighbors = [
                 spin_arr[(x-1)%L][(y-1)%L],
@@ -193,7 +191,23 @@ ALGORITHMS = {
     # "square-ice"
 }
 
-def block_average(data, block_size=500):
+# Adjust Temperature min and maxes to adjust graphs
+LATTICE_PARAMS = {
+    'square': {
+        'T_min': 1.0,
+        'T_max': 3.5,
+        'n_points': 50,
+        'Tc': 2.269
+    },
+    'triangular': {
+        'T_min': 2.0,
+        'T_max': 5.5,
+        'n_points': 75,
+        'Tc': 3.641  # 4/ln(3)
+    }
+}
+
+def block_average(data, block_size=1000):
     """
     Compute block-averaged mean and variance to account for autocorrelations
     in Monte Carlo data. Grouping into blocks decorrelates the samples,
@@ -221,14 +235,14 @@ def get_spin_energy(lattice, BJs, run_index, lattice_shape):
     Parameters:
         lattice (ndarray): Initial 2D spin configuration.
         BJs (array): Array of inverse temperatures (beta * J = J / k_B T).
-        run_index (int): Index used for labelling saved spin files.
+        run_index (int): Index used for labeling saved spin files.
         lattice_shape (str): Lattice geometry ('square' or 'triangular').
 
     Returns:
         ms (ndarray): Mean magnetization per spin.
         E_means (ndarray): Mean energy per spin.
         E_stds (ndarray): Standard deviation of energy per spin.
-        E_vars (ndarray): Variance of energy.
+        E_vars (ndarray): Variance of energy per spin².
         C (ndarray): Specific heat capacity per spin.
         ms_abs (ndarray): Mean absolute magnetization per spin.
         chi (ndarray): Magnetic susceptibility.
@@ -236,49 +250,53 @@ def get_spin_energy(lattice, BJs, run_index, lattice_shape):
     """
     ms = np.zeros(len(BJs))
     ms_abs = np.zeros(len(BJs))
-    ms_vars = np.zeros(len(BJs))
     E_means = np.zeros(len(BJs))
     E_stds = np.zeros(len(BJs))
     E_vars = np.zeros(len(BJs))
     C = np.zeros(len(BJs))
     chi = np.zeros(len(BJs))
     chi_prime = np.zeros(len(BJs))
+    Tc = LATTICE_PARAMS[lattice_shape]['Tc']
     for i, bj in enumerate(BJs):
         T=1/bj
-        n_steps = 5000000 if 1.8 <= T <= 2.8 else 1000000
+        n_steps = 3000000 if Tc * 0.8 <= T <= Tc * 1.2 else 1500000
 
         spins, energies, tests = (
             ALGORITHMS[lattice_shape](lattice, n_steps, bj, get_energy(lattice, lattice_shape)))
 
-        # Use only the last x steps (post-equilibration)
-        eq_S = spins[100000:]
-        eq_E = energies[100000:]
+        # Use data after x steps (post-equilibration)
+        x = int(n_steps * 0.15)
+        eq_S = spins[x:]
+        eq_E = energies[x:]
 
-        # Normalized observables per spin
-        ms[i], ms_vars[i] = block_average(eq_S)
-        ms[i] /= L ** 2
-        abs_mean, _ = block_average(np.abs(eq_S))
-        ms_abs[i] = abs_mean / L ** 2
-        E_means[i], E_vars[i] = block_average(eq_E)
-        E_means[i] /= L ** 2
-        E_stds[i] = eq_E.std() / L ** 2
+        # Block observables per spin
+        M_mean, M_var = block_average(eq_S)             # <M_total>, Var(M_total)
+        M_abs_mean, _ = block_average(np.abs(eq_S))     # <|M_total|>
+        E_mean, E_var = block_average(eq_E)             # <E_total>, Var(E_total)
+        M2_mean, _ = block_average(eq_S**2)             # <M^2_total>
+
+        #Normalizations
+        ms[i] = M_mean / L ** 2                         # <M> per spin
+        ms_abs[i] = M_abs_mean / L ** 2                 # <|M|> per spin
+        E_means[i] = E_mean / L ** 2                    # <E> per spin
+        E_vars[i] = E_var / L ** 4                      # Var(E) per spin
+        E_stds[i] = np.sqrt(E_vars[i])                  # σ(E) per spin
+
 
         # Save final spin configuration to file
         np.save(f"{folder_name}/spins{i}_run{run_index}", tests)
 
-        # Specific heat: C = Var(E) / (k_B T^2 N), with k_B = 1
-        C[i]= E_vars[i] / (T**2 * L**2)
-        # Susceptibility: chi = Var(M) / (k_B T N)
-        chi[i] = ms_vars[i] / (T * L**2)
-        # Alternative susceptibility using connected correlator: (<M^2> - <|M|>^2) / (T N)
-        chi_prime[i] = (np.mean(eq_S**2) - np.mean(np.abs(eq_S))**2) / (T * L**2)
+        # Thermodynamic observables
+        C[i]= E_var / (T**2 * L**2)                     # C = Var(E_total) / (k_B T² N)
+        chi[i] = M_var / (T * L**2)                     # χ = Var(M_total) / (k_B T N)
+        chi_prime[i] = (M2_mean - M_abs_mean**2) / (T * L**2)   # χ' = (<M²> - <|M|>²) / (T N)
 
     return ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime
 
 
 def get_spin_train_data(lattice, lattice_shape, BJs):
     """
-    Generate labelled training data for a binary phase classifier.
+    Generate labeled training data for a binary phase classifier.
     Skips temperatures within 20% of Tc (the critical region) to avoid
     ambiguous near-transition samples.
 
@@ -291,6 +309,7 @@ def get_spin_train_data(lattice, lattice_shape, BJs):
         lattice_shape (str): Lattice geometry ('square' or 'triangular').
         BJs (array): Array of inverse temperatures.
     """
+    Tc = LATTICE_PARAMS[lattice_shape]['Tc']
     for i, bj in enumerate(BJs):
         T = 1 / bj #type: ignore
 
@@ -322,7 +341,8 @@ def get_spin_test_data(lattice, lattice_shape, BJs):
         T = 1 / bj #type: ignore
 
         # Use more steps near Tc where equilibration is slowest (critical slowing down)
-        n_steps = 5000000 if 1.8 <= T <= 2.8 else 1000000
+        Tc = LATTICE_PARAMS[lattice_shape]['Tc']
+        n_steps = 5000000 if Tc * 0.8 <= T <= Tc * 1.2 else 1000000
 
         lattice = lattice.copy()
         spins, energies, data = (
@@ -337,20 +357,21 @@ def lattice_plot(lattice, run_index, lattice_shape):
 
     Parameters:
         lattice (ndarray): Initial 2D spin configuration.
-        run_index (int): Index used for labelling saved spin files.
+        run_index (int): Index used for labeling saved spin files.
         lattice_shape (str): Lattice geometry ('square' or 'triangular').
     """
-    T = np.linspace(1.0, 3.5, 50)
+    params = LATTICE_PARAMS[lattice_shape]
+    T = np.linspace(params['T_min'], params['T_max'], params['n_points'])
     BJs = 1/T
 
     lattice = lattice.copy()
     ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime = get_spin_energy(lattice, BJs, run_index, lattice_shape)
-    plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T)
-    plot_chis(chi, chi_prime, T)
+    plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T, lattice_shape)
+    plot_chis(chi, chi_prime, T, lattice_shape)
 
 
 
-def plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T):
+def plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T, lattice_shape):
     """
     Plot magnetization, energy, energy fluctuations, specific heat,
     and absolute magnetization as functions of temperature.
@@ -364,40 +385,43 @@ def plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T):
         C (ndarray): Specific heat.
         ms_abs (ndarray): Absolute magnetization per spin.
         T (ndarray): Temperature values.
+        lattice_shape (str): Lattice geometry ('square' or 'triangular')
     """
+    Tc = LATTICE_PARAMS[lattice_shape]['Tc']
     fig, axes = plt.subplots(3, 2, figsize=(8, 10), sharex=True)
+    fig.suptitle(f'{lattice_shape.capitalize()} Data')
+    for ax in axes.flat:
+        ax.tick_params(labelbottom=True)
+        ax.axvline(Tc, color='r', linestyle='--')
+        ax.text(Tc, -0.1, f'$T_c$', ha='center', fontsize=12,
+                fontweight='bold', color='r', transform=ax.get_xaxis_transform())
 
-    axes[0, 0].plot(T, ms)
-    axes[0, 0].set_ylabel('Avg spin per site')
-    axes[0, 0].set_title('Average Spin vs Temperature')
-    axes[0, 0].axvline(Tc, color='r', linestyle='--')
+    axes[0, 0].plot(T, ms_abs)
+    axes[0, 0].set_ylabel('<|M|>')
+    axes[0, 0].set_title('Absolute Magnetization vs Temperature')
 
     axes[1, 0].plot(T, E_means)
     axes[1, 0].set_ylabel('Mean Energy per site')
     axes[1, 0].set_title('Energy vs Temperature')
-    axes[1, 0].axvline(Tc, color='r', linestyle='--')
 
     axes[2, 0].plot(T, E_stds)
     axes[2, 0].set_ylabel('Energy Std Dev')
     axes[2, 0].set_xlabel('Temperature')
     axes[2, 0].set_title('Energy Fluctuations vs Temperature')
     axes[2, 0].set_ylim(0, 0.8)
-    axes[2, 0].axvline(Tc, color='r', linestyle='--')
 
     axes[0, 1].plot(T, C)
     axes[0, 1].set_ylabel('C')
     axes[0, 1].set_title('Heat Fluctuations vs Temperature')
-    axes[0, 1].axvline(Tc, color='r', linestyle='--')
 
-    axes[1, 1].plot(T, ms_abs)
-    axes[1, 1].set_ylabel('<|M|>')
-    axes[1, 1].set_title('Absolute Magnetization vs Temperature')
-    axes[1, 1].axvline(Tc, color='r', linestyle='--')
+    axes[1, 1].plot(T, ms)
+    axes[1, 1].set_ylabel('Avg spin per site')
+    axes[1, 1].set_title('Polarized Spin vs Temperature')
 
     fig.tight_layout()
     plt.show()
 
-def plot_chis(chi, chi_prime, T):
+def plot_chis(chi, chi_prime, T, lattice_shape):
     """
     Plot magnetic susceptibility (chi) and the alternative susceptibility (chi)
     as functions of temperature, with a vertical line at Tc.
@@ -406,7 +430,9 @@ def plot_chis(chi, chi_prime, T):
         chi (ndarray): Susceptibility from variance of M.
         chi_prime (ndarray): Susceptibility from connected correlator.
         T (ndarray): Temperature values.
+        lattice_shape (str): Lattice geometry ('square' or 'triangular')
     """
+    Tc = LATTICE_PARAMS[lattice_shape]['Tc']
     fig, axes = plt.subplots(1, 2, figsize=(8, 10), sharex=True)
     axes[0].plot(T, chi)
     axes[0].set_ylabel('Chi')
@@ -425,30 +451,35 @@ def plot_chis(chi, chi_prime, T):
 #     lattice_plot(lattice_ones, i+1, 'square')
 #     lattice_plot(-lattice_ones, -i, 'square')
 
-def toy_data():
+def toy_data(lattice_shape):
     """
     Helper function to generate and save test and training data
     over a temperature range for use in ML experiments.
     Training data generation is currently commented out.
+
+    Parameters:
+        lattice_shape (str): Lattice geometry ('square' or 'triangular').
     """
-    T_range = np.linspace(1.0, 3.5, 50)
+    params = LATTICE_PARAMS[lattice_shape]
+    T_range = np.linspace(params['T_min'], params['T_max'], params['n_points'])
     BJs = 1 / T_range
     for i in range(30):
         print(f"Run {i+1}/10")
         # get_spin_train_data(lattice_ones, 'square', BJs)
         # get_spin_train_data(-lattice_ones, 'square', BJs)
-        get_spin_test_data(lattice_ones, 'square', BJs)
-        get_spin_test_data(-lattice_ones, 'square', BJs)
+        # get_spin_test_data(lattice_ones, 'square', BJs)
+        # get_spin_test_data(-lattice_ones, 'square', BJs)
 
 # Plot metropolis with positively charged lattice
-# lattice_plot(lattice_ones, 1, 'square')
+lattice_plot(lattice_ones, 0, 'square')
+# lattice_plot(lattice_ones, 0, 'triangular')
 
 # Plot metropolis with negatively charged lattice
-# lattice_plot(-lattice_ones, -1, 'square')
+# lattice_plot(-lattice_ones, 0, 'triangular')
 
-toy_data()
+# toy_data('triangular')
 # train_array = np.array(train_configs); np.save(f"{folder_name}/train_configs.npy", train_array)
 # labels_array = np.array(train_labels); np.save(f"{folder_name}/train_labels.npy", labels_array)
 
-test_array = np.array(test_configs); np.save(f"{folder_name}/test_configs.npy", test_array)
-temp_array = np.array(test_temps); np.save(f"{folder_name}/test_temps.npy", temp_array)
+# test_array = np.array(test_configs); np.save(f"{folder_name}/test_configs.npy", test_array)
+# temp_array = np.array(test_temps); np.save(f"{folder_name}/test_temps.npy", temp_array)
