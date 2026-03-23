@@ -1,8 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import numba
-from scipy.ndimage import convolve, generate_binary_structure
-import scipy.ndimage as sp
+from scipy.ndimage import uniform_filter1d, gaussian_filter1d
 import os
 import time
 
@@ -11,7 +10,10 @@ folder_name = "TestSpins"
 os.makedirs(folder_name, exist_ok=True)
 
 # L by L grid = N total spins
-L = 30
+L = 40
+
+REC_EVERY = L ** 2  # Record one per sweep instead of every run
+
 
 # --- Lattice Initialization ---
 # Negatively biased: 75% spins down (-1)
@@ -75,7 +77,7 @@ def get_energy(lattice, lattice_shape):
 # print(get_energy(lattice_ones, "triangular")
 
 @numba.njit(cache=False)
-def metropolis(spin_arr, times, BJ, energy):
+def metropolis(spin_arr, times, BJ, energy, rec_every):
     """
     Run the Metropolis-Hastings algorithm on a square lattice.
     At each step, a random spin is selected and flipped if the move is energetically
@@ -93,10 +95,13 @@ def metropolis(spin_arr, times, BJ, energy):
         net_energy (ndarray): Total energy at each step.
         tests (ndarray): Flattened final spin configuration.
     """
-    net_spins = np.zeros(times-1)
-    net_energy = np.zeros(times-1)
+    n_records = times // rec_every
+    net_spins = np.zeros(n_records)
+    net_energy = np.zeros(n_records)
+    L = spin_arr.shape[0]
     M = float(spin_arr.sum())
-    for t in range(0, times-1):
+    rec = 0
+    for t in range(times):
         # Pick a random spin site
         x = np.random.randint(0,L)
         y = np.random.randint(0,L)
@@ -117,15 +122,17 @@ def metropolis(spin_arr, times, BJ, energy):
             spin_arr[x, y] *= -1  #flip selected spin
             energy += dE
 
-        net_spins[t] = M
-        net_energy[t] = energy
+        if t % rec_every == 0:
+            net_spins[rec] = M
+            net_energy[rec] = energy
+            rec += 1
 
     tests = spin_arr.flatten()
 
-    return net_spins, net_energy, tests
+    return net_spins, net_energy, tests, energy
 
 @numba.njit(cache=False)
-def triangular_metropolis(spin_arr, times, BJ, energy):
+def triangular_metropolis(spin_arr, times, BJ, energy, rec_every):
     """
     Run the Metropolis-Hastings algorithm on a triangular lattice.
     Each spin has 6 neighbors; the neighbor pattern alternates based on
@@ -143,9 +150,12 @@ def triangular_metropolis(spin_arr, times, BJ, energy):
         net_energy (ndarray): Total energy at each step.
         tests (ndarray): Flattened final spin configuration.
     """
-    net_spins = np.zeros(times-1)
-    net_energy = np.zeros(times-1)
+    n_records = times // rec_every
+    net_spins = np.zeros(n_records)
+    net_energy = np.zeros(n_records)
+    L = spin_arr.shape[0]
     M = float(spin_arr.sum())
+    rec = 0
     for t in range(0, times-1):
         x = np.random.randint(0, L)
         y = np.random.randint(0, L)
@@ -177,12 +187,14 @@ def triangular_metropolis(spin_arr, times, BJ, energy):
             spin_arr[x, y] *= -1  # flip selected spin
             energy += dE
 
-        net_spins[t] = M
-        net_energy[t] = energy
+        if t % rec_every == 0:
+            net_spins[rec] = M
+            net_energy[rec] = energy
+            rec += 1
 
     tests = spin_arr.flatten()
 
-    return net_spins, net_energy, tests
+    return net_spins, net_energy, tests, energy
 
 # Maps lattice geometry names to their corresponding Metropolis algorithm
 ALGORITHMS = {
@@ -207,7 +219,7 @@ LATTICE_PARAMS = {
     }
 }
 
-def block_average(data, block_size=1000):
+def block_average(data, block_size=1500):
     """
     Compute block-averaged mean and variance to account for autocorrelations
     in Monte Carlo data. Grouping into blocks decorrelates the samples,
@@ -219,7 +231,7 @@ def block_average(data, block_size=1000):
 
     Returns:
         mean (float): Block-averaged mean.
-        var (float): Block-averaged variance (ddof=1).
+        var (float): Block-averaged variance (dof=1).
     """
     n_blocks = len(data) // block_size
     blocks = data[:n_blocks * block_size].reshape(n_blocks, block_size)
@@ -256,24 +268,45 @@ def get_spin_energy(lattice, BJs, run_index, lattice_shape):
     C = np.zeros(len(BJs))
     chi = np.zeros(len(BJs))
     chi_prime = np.zeros(len(BJs))
+    L = lattice.shape[0]
     Tc = LATTICE_PARAMS[lattice_shape]['Tc']
+    energy = get_energy(lattice, lattice_shape)
     for i, bj in enumerate(BJs):
         T=1/bj
-        n_steps = 3000000 if Tc * 0.8 <= T <= Tc * 1.2 else 1500000
+        # Steps scaled as L^2 to maintain constant sweep count across lattice sizes
+        L_ref = 40
+        N_ref_critical = 15_000_000
+        N_ref_normal = 5_000_000
 
-        spins, energies, tests = (
-            ALGORITHMS[lattice_shape](lattice, n_steps, bj, get_energy(lattice, lattice_shape)))
+        if L >= 40:
+            # L^(2+z) scaling - theoretically correct for large L
+            n_steps_critical = int(N_ref_critical * (L / L_ref) ** 4.17)
+            n_steps_normal = int(N_ref_normal * (L / L_ref) ** 4.17)
+        else:
+            # L^2 for smaller L's, shouldn't be noticeable
+            n_steps_critical = int(N_ref_critical * (L / L_ref) ** 2)
+            n_steps_normal = int(N_ref_normal * (L / L_ref) ** 2)
+
+        n_steps = n_steps_critical if Tc * 0.8 <= T <= Tc * 1.2 else n_steps_normal
+
+        spins, energies, tests, energy = (
+            ALGORITHMS[lattice_shape](lattice, n_steps, bj, energy, REC_EVERY))
+
+        # n_records is the size of the arrays based on how often we record data
+        n_records = n_steps // REC_EVERY
 
         # Use data after x steps (post-equilibration)
-        x = int(n_steps * 0.15)
-        eq_S = spins[x:]
-        eq_E = energies[x:]
+        x = int(n_records * 0.10) if Tc * 0.8 <= T <= Tc * 1.2 else int(n_records * 0.50)
+        eq_S = spins[x:].astype(np.float64)
+        eq_E = energies[x:].astype(np.float64)
 
+        #Larger blocks near Tc where autocorrelation time is long
+        block_size = 30 if Tc * 0.8 <= T <= Tc * 1.2 else 1
         # Block observables per spin
-        M_mean, M_var = block_average(eq_S)             # <M_total>, Var(M_total)
-        M_abs_mean, _ = block_average(np.abs(eq_S))     # <|M_total|>
-        E_mean, E_var = block_average(eq_E)             # <E_total>, Var(E_total)
-        M2_mean, _ = block_average(eq_S**2)             # <M^2_total>
+        M_mean, M_var = block_average(eq_S, block_size)             # <M_total>, Var(M_total)
+        M_abs_mean, _ = block_average(np.abs(eq_S), block_size)     # <|M_total|>
+        E_mean, E_var = block_average(eq_E, block_size)             # <E_total>, Var(E_total)
+        M2_mean, _ = block_average(eq_S**2, block_size)             # <M^2_total>
 
         #Normalizations
         ms[i] = M_mean / L ** 2                         # <M> per spin
@@ -287,8 +320,8 @@ def get_spin_energy(lattice, BJs, run_index, lattice_shape):
         np.save(f"{folder_name}/spins{i}_run{run_index}", tests)
 
         # Thermodynamic observables
-        C[i]= E_var / (T**2 * L**2)                     # C = Var(E_total) / (k_B T² N)
-        chi[i] = M_var / (T * L**2)                     # χ = Var(M_total) / (k_B T N)
+        C[i]= np.var(eq_E) / (T**2 * L**2)                      # C = Var(E_total) / (k_B T² N)
+        chi[i] = np.var(eq_S) / (T * L**2)                      # χ = Var(M_total) / (k_B T N)
         chi_prime[i] = (M2_mean - M_abs_mean**2) / (T * L**2)   # χ' = (<M²> - <|M|>²) / (T N)
 
     return ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime
@@ -297,12 +330,10 @@ def get_spin_energy(lattice, BJs, run_index, lattice_shape):
 def get_spin_train_data(lattice, lattice_shape, BJs):
     """
     Generate labeled training data for a binary phase classifier.
-    Skips temperatures within 20% of Tc (the critical region) to avoid
-    ambiguous near-transition samples.
 
     Labels:
-        0 = Low temperature (ordered/ferromagnetic phase), T < 0.8 * Tc
-        1 = High temperature (disordered/paramagnetic phase), T > 1.2 * Tc
+        0 = Low temperature (ordered/ferromagnetic phase), T < Tc
+        1 = High temperature (disordered/paramagnetic phase), T > Tc
 
     Parameters:
         lattice (ndarray): Initial 2D spin configuration.
@@ -310,18 +341,15 @@ def get_spin_train_data(lattice, lattice_shape, BJs):
         BJs (array): Array of inverse temperatures.
     """
     Tc = LATTICE_PARAMS[lattice_shape]['Tc']
+    lattice = lattice.copy()
+    energy = get_energy(lattice, lattice_shape)
     for i, bj in enumerate(BJs):
         T = 1 / bj #type: ignore
 
-        # Skip the critical region to keep training labels clean
-        if Tc * 0.85 <= T <= Tc * 1.15:
-            continue
+        spins, energies, data, energy = (
+            ALGORITHMS[lattice_shape](lattice, 1000000, bj, energy, REC_EVERY)) #type: ignore
 
-        lattice = lattice.copy()
-        spins, energies, data = (
-            ALGORITHMS[lattice_shape](lattice, 1000000, bj, get_energy(lattice, lattice_shape))) #type: ignore
-
-        label = 0 if T < Tc * 0.85 else 1  # 0: ordered, 1: disordered
+        label = 0 if T < Tc else 1  # 0: ordered, 1: disordered
 
         train_configs.append(data)
         train_labels.append(label)
@@ -337,16 +365,19 @@ def get_spin_test_data(lattice, lattice_shape, BJs):
         lattice_shape (str): Lattice geometry ('square' or 'triangular').
         BJs (array): Array of inverse temperatures.
     """
+    Tc = LATTICE_PARAMS[lattice_shape]['Tc']
+    lattice = lattice.copy()
+    L_local = lattice.shape[0]
+    n_steps_critical = int(10_000_000 * (L_local ** 2) // (40 ** 2))
+    n_steps_normal = int(1_000_000 * (L_local ** 2) // (40 ** 2))
+    energy = get_energy(lattice, lattice_shape)
     for i, bj in enumerate(BJs):
         T = 1 / bj #type: ignore
 
         # Use more steps near Tc where equilibration is slowest (critical slowing down)
-        Tc = LATTICE_PARAMS[lattice_shape]['Tc']
-        n_steps = 5000000 if Tc * 0.8 <= T <= Tc * 1.2 else 1000000
-
-        lattice = lattice.copy()
-        spins, energies, data = (
-            ALGORITHMS[lattice_shape](lattice, n_steps, bj, get_energy(lattice, lattice_shape))) #type: ignore
+        n_steps = n_steps_critical if Tc * 0.8 <= T <= Tc * 1.2 else n_steps_normal
+        spins, energies, data, energy = (
+            ALGORITHMS[lattice_shape](lattice, n_steps, bj, energy, REC_EVERY)) #type: ignore
 
         test_configs.append(data)
         test_temps.append(T)
@@ -361,17 +392,23 @@ def lattice_plot(lattice, run_index, lattice_shape):
         lattice_shape (str): Lattice geometry ('square' or 'triangular').
     """
     params = LATTICE_PARAMS[lattice_shape]
-    T = np.linspace(params['T_min'], params['T_max'], params['n_points'])
+    Tc = params['Tc']
+    L = lattice.shape[0]
+    Tc_prime = Tc + (1 / L)
+
+    T = np.unique(np.concatenate([
+        np.linspace(params['T_min'], Tc * 0.8, 15),
+        np.linspace(Tc * 0.8, Tc * 1.2, 50),
+        np.linspace(Tc * 1.2, params['T_max'], 15)
+    ]))
     BJs = 1/T
 
     lattice = lattice.copy()
     ms, E_means, E_stds, E_vars, C, ms_abs, chi, chi_prime = get_spin_energy(lattice, BJs, run_index, lattice_shape)
-    plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T, lattice_shape)
+    plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T, Tc_prime, lattice_shape)
     plot_chis(chi, chi_prime, T, lattice_shape)
 
-
-
-def plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T, lattice_shape):
+def plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T, Tc_prime, lattice_shape):
     """
     Plot magnetization, energy, energy fluctuations, specific heat,
     and absolute magnetization as functions of temperature.
@@ -393,10 +430,13 @@ def plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T, lattice_shape):
     for ax in axes.flat:
         ax.tick_params(labelbottom=True)
         ax.axvline(Tc, color='r', linestyle='--')
+        ax.axvline(Tc_prime, color='y', linestyle='-')
         ax.text(Tc, -0.1, f'$T_c$', ha='center', fontsize=12,
                 fontweight='bold', color='r', transform=ax.get_xaxis_transform())
+        ax.text(Tc_prime, -0.3, r"$T_c'$", ha='center', fontsize=12,
+                fontweight='bold', color='y', transform=ax.get_xaxis_transform())
 
-    axes[0, 0].plot(T, ms_abs)
+    axes[0, 0].plot(T, gaussian_filter1d(ms_abs, sigma=2))
     axes[0, 0].set_ylabel('<|M|>')
     axes[0, 0].set_title('Absolute Magnetization vs Temperature')
 
@@ -463,12 +503,13 @@ def toy_data(lattice_shape):
     params = LATTICE_PARAMS[lattice_shape]
     T_range = np.linspace(params['T_min'], params['T_max'], params['n_points'])
     BJs = 1 / T_range
-    for i in range(30):
-        print(f"Run {i+1}/10")
+    runs = 30
+    for i in range(runs):
+        print(f"Run {i+1}/{runs}")
         # get_spin_train_data(lattice_ones, 'square', BJs)
         # get_spin_train_data(-lattice_ones, 'square', BJs)
-        # get_spin_test_data(lattice_ones, 'square', BJs)
-        # get_spin_test_data(-lattice_ones, 'square', BJs)
+        get_spin_test_data(lattice_ones, 'square', BJs)
+        get_spin_test_data(-lattice_ones, 'square', BJs)
 
 # Plot metropolis with positively charged lattice
 lattice_plot(lattice_ones, 0, 'square')
@@ -477,7 +518,7 @@ lattice_plot(lattice_ones, 0, 'square')
 # Plot metropolis with negatively charged lattice
 # lattice_plot(-lattice_ones, 0, 'triangular')
 
-# toy_data('triangular')
+# toy_data('square')
 # train_array = np.array(train_configs); np.save(f"{folder_name}/train_configs.npy", train_array)
 # labels_array = np.array(train_labels); np.save(f"{folder_name}/train_labels.npy", labels_array)
 
