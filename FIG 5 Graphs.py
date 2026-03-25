@@ -77,7 +77,7 @@ plt.scatter(m_sorted, activations[1, :],
             label='Neuron 2', color='red', alpha=0.5, s=10)
 plt.scatter(m_sorted, activations[2, :],
             label='Neuron 3', color='green', alpha=0.5, s=10)
-
+plt.legend()
 plt.show()
 
 ## FIGURE 5(C) trained weights to create a graph similar to the first figure
@@ -117,5 +117,5 @@ plt.scatter(m_values_systematic, activations_systematic[:, 1],
             label='Neuron 2', color='purple', alpha=0.5, s=10)
 plt.scatter(m_values_systematic, activations_systematic[:, 2],
             label='Neuron 3', color='green', alpha=0.5, s=10)
-
+plt.legend()
 plt.show()
