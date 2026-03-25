@@ -301,7 +301,8 @@ def get_spin_energy(lattice, BJs, run_index, lattice_shape):
         eq_E = energies[x:].astype(np.float64)
 
         #Larger blocks near Tc where autocorrelation time is long
-        block_size = 30 if Tc * 0.8 <= T <= Tc * 1.2 else 1
+        # block_size = 30 if Tc * 0.8 <= T <= Tc * 1.2 else 1
+        block_size = 1
         # Block observables per spin
         M_mean, M_var = block_average(eq_S, block_size)             # <M_total>, Var(M_total)
         M_abs_mean, _ = block_average(np.abs(eq_S), block_size)     # <|M_total|>
@@ -429,12 +430,11 @@ def plot_misc(ms, E_means, E_stds, E_vars, C, ms_abs, T, Tc_prime, lattice_shape
     fig.suptitle(f'{lattice_shape.capitalize()} Data')
     for ax in axes.flat:
         ax.tick_params(labelbottom=True)
-        ax.axvline(Tc, color='r', linestyle='--')
-        ax.axvline(Tc_prime, color='y', linestyle='-')
-        ax.text(Tc, -0.1, f'$T_c$', ha='center', fontsize=12,
-                fontweight='bold', color='r', transform=ax.get_xaxis_transform())
-        ax.text(Tc_prime, -0.3, r"$T_c'$", ha='center', fontsize=12,
-                fontweight='bold', color='y', transform=ax.get_xaxis_transform())
+        ax.axvline(Tc, color='r', linestyle='--', label=f"Tc = {Tc}")
+        ax.axvline(Tc_prime, color='y', linestyle='-', label=f"$T_c'$ = {Tc_prime:.3f}")
+        ax.legend(fontsize=8, loc='upper right')
+        ax.text(0.20, 0.50, f'L = {L}', transform=ax.transAxes,
+                fontsize=15, va='top', ha='left', color='black')
 
     axes[0, 0].plot(T, gaussian_filter1d(ms_abs, sigma=2))
     axes[0, 0].set_ylabel('<|M|>')
@@ -473,16 +473,18 @@ def plot_chis(chi, chi_prime, T, lattice_shape):
         lattice_shape (str): Lattice geometry ('square' or 'triangular')
     """
     Tc = LATTICE_PARAMS[lattice_shape]['Tc']
-    fig, axes = plt.subplots(1, 2, figsize=(8, 10), sharex=True)
+    fig, axes = plt.subplots(1, 2, figsize=(14, 8), sharex=True)
     axes[0].plot(T, chi)
     axes[0].set_ylabel('Chi')
     axes[0].set_xlabel('Temperature')
-    axes[0].axvline(Tc, color='r', linestyle='--')
+    axes[0].axvline(Tc, color='r', linestyle='--', label=f'$T_c$ = {Tc}')
+    axes[0].legend(fontsize=12)
 
     axes[1].plot(T, chi_prime)
     axes[1].set_ylabel('Chi Prime')
     axes[1].set_xlabel('Temperature')
-    axes[1].axvline(Tc, color='r', linestyle='--')
+    axes[1].axvline(Tc, color='r', linestyle='--', label=f'$T_c$ = {Tc}')
+    axes[1].legend(fontsize=12)
 
     fig.tight_layout()
     plt.show()

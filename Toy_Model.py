@@ -23,7 +23,7 @@ class ToyModel(nn.Module):
         output = hidden @ self.W2.T + self.b2
         return output
 
-def trainmodel(train_configs, train_labels, epochs=600, lr=0.01, lambda_reg=0.00001):
+def trainmodel(train_configs, train_labels, epochs=200, lr=0.01, lambda_reg=0.00001):
     n_inputs = train_configs.shape[1]
     model = ToyModel(n_inputs)
 
@@ -96,8 +96,8 @@ for i, temp in enumerate(unique_temps):
     avg_probs[i] = probabilities[mask].mean(axis=0)
 
 near_Tc_mask = (test_temps > 2.0) & (test_temps < 2.5)
-print("Temps near Tc:", test_temps[near_Tc_mask])
-print("Probabilities:", probabilities[near_Tc_mask])
+# print("Temps near Tc:", test_temps[near_Tc_mask])
+# print("Probabilities:", probabilities[near_Tc_mask])
 
 fig, axes = plt.subplots(2, figsize=(8, 12), sharex=True)
 
@@ -105,7 +105,7 @@ axes[0].plot(unique_temps, avg_probs[:, 0], 'b^-', label='T < Tc')
 axes[0].plot(unique_temps, avg_probs[:, 1], 'ro-', label='T > Tc')
 axes[0].axvline(Tc, color='orange', linestyle='-')
 axes[0].set_xlim(1.0, 3.5)
-axes[0].legend()
+axes[0].legend(fontsize=15)
 
 uncertainty = np.max(avg_probs, axis=1)
 axes[1].plot(unique_temps, uncertainty, '^-', label='L=30')
